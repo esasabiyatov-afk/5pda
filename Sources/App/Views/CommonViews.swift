@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Состояние загрузки экрана.
 enum LoadState<T> {
@@ -91,6 +92,22 @@ struct BBBlockView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .image(let url):
             PostImage(url: url)
+        case .video(let id):
+            Button {
+                if let u = URL(string: "https://www.youtube.com/watch?v=\(id)") { UIApplication.shared.open(u) }
+            } label: {
+                ZStack {
+                    RemoteImage(url: URL(string: "https://img.youtube.com/vi/\(id)/hqdefault.jpg"), contentMode: .fill) {
+                        Color.black
+                    }
+                    .aspectRatio(16 / 9, contentMode: .fit)
+                    .clipped()
+                    Image(systemName: "play.circle.fill").font(.system(size: 54))
+                        .foregroundStyle(.white, .red)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
         case .quote(let title, let blocks):
             HStack(spacing: 0) {
                 Rectangle().fill(Color.secondary.opacity(0.5)).frame(width: 4)

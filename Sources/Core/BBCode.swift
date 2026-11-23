@@ -5,6 +5,7 @@ import SwiftUI
 indirect enum BBBlock: Identifiable {
     case text(AttributedString)
     case image(URL)
+    case video(id: String)
     case quote(title: String, blocks: [BBBlock])
     case spoiler(title: String, blocks: [BBBlock])
     case code(String)
@@ -13,6 +14,7 @@ indirect enum BBBlock: Identifiable {
         switch self {
         case .text(let t): return "t\(t.hashValue)"
         case .image(let u): return "i\(u.absoluteString)"
+        case .video(let v): return "v\(v)"
         case .quote(let t, let b): return "q\(t)\(b.count)\(b.first?.id ?? "")"
         case .spoiler(let t, let b): return "s\(t)\(b.count)\(b.first?.id ?? "")"
         case .code(let c): return "c\(c.hashValue)"
@@ -32,7 +34,7 @@ struct BBParser {
         "attachment", "background", "b", "center", "code", "color", "cur", "ex", "font", "hide", "img", "i",
         "left", "list", "mergetime", "mod", "offtop", "quote", "right", "size", "snapback", "spoiler",
         "sub", "sup", "s", "url", "u", "*", "break", "na", "seporator", "backgroud", "indent", "numlist",
-        "table", "tr", "td", "th", "hr", "video", "user", "anchor", "strike", "spoil", "acronym",
+        "table", "tr", "td", "th", "hr", "video", "user", "anchor", "strike", "spoil", "acronym", "youtube",
     ]
 
     var attachments: [Attachment] = []
@@ -158,6 +160,19 @@ struct BBParser {
                         flushText(); blocks.append(.image(u))
                     }
                     continue
+                case "youtube", "video":
+                    // [youtube=ID:ширина:высота:::0] или [video]ссылка[/video]
+                    var ref = Self.unquote(arg)
+                    if ref.isEmpty { ref = Self.collectText(&tokens, until: name) }
+                    if let id = Self.youtubeId(ref) {
+                        flushText(); blocks.append(.video(id: id))
+                    } else if let u = PDAAPI.absoluteURL(ref) {
+                        var a = AttributedString("▶ Видео")
+                        a.link = u
+                        a.foregroundColor = .accentColor
+                        current += a
+                    }
+                    continue
                 case "attachment":
                     if let block = attachmentBlock(arg) {
                         flushText(); blocks.append(block)
@@ -277,6 +292,19 @@ struct BBParser {
     private static func peekText(_ tokens: [Token]) -> String {
         if let t = tokens.last, case .text(let s) = t.kind { return s }
         return ""
+    }
+
+    static func youtubeId(_ ref: String) -> String? {
+        let r = ref.trimmingCharacters(in: .whitespaces)
+        if let u = URLComponents(string: r), let host = u.host {
+            if host.contains("youtu.be") { return u.path.split(separator: "/").first.map(String.init) }
+            if host.contains("youtube"), let v = u.queryItems?.first(where: { $0.name == "v" })?.value { return v }
+            if host.contains("youtube"), u.path.contains("/embed/") || u.path.contains("/shorts/") {
+                return u.path.split(separator: "/").last.map(String.init)
+            }
+        }
+        let id = r.split(separator: ":").first.map(String.init) ?? ""
+        return id.count >= 8 && id.count <= 15 && id.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }) ? id : nil
     }
 
     private static func unquote(_ s: String) -> String {

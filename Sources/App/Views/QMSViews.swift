@@ -113,6 +113,9 @@ struct QMSDialogView: View {
     @State private var alert: ActionAlert?
     @State private var loadingOlder = false
     @State private var reachedStart = false
+    @State private var showAttach = false
+    @StateObject private var attach = AttachmentUploader()
+    @StateObject private var qmsEditor = BBEditorController()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -150,7 +153,12 @@ struct QMSDialogView: View {
                     .onChange(of: d.messages.last?.id) { id in if let id = id { proxy.scrollTo(id, anchor: .bottom) } }
                 }
                 Divider()
+                if showAttach { AttachmentBar(uploader: attach, editor: qmsEditor) }
                 HStack(alignment: .bottom) {
+                    Button { showAttach.toggle() } label: {
+                        Image(systemName: "paperclip").font(.title3)
+                    }
+                    .padding(.bottom, 6)
                     TextField("Сообщение", text: $text, axis: .vertical)
                         .lineLimit(1...6)
                         .textFieldStyle(.roundedBorder)
@@ -159,7 +167,7 @@ struct QMSDialogView: View {
                     } label: {
                         if sending { ProgressView() } else { Image(systemName: "paperplane.fill") }
                     }
-                    .disabled(sending || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(sending || (text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attach.items.isEmpty))
                 }
                 .padding(8)
             } else if let e = error {
@@ -216,8 +224,13 @@ struct QMSDialogView: View {
         sending = true
         defer { sending = false }
         do {
-            try await PDAAPI.qmsSend(dialogId: route.id, text: text)
+            let ids = attach.items.compactMap(\.id)
+            var body = text
+            for item in attach.items { if let id = item.id { body += "\n[attachment=\"\(id):\(item.name)\"]" } }
+            try await PDAAPI.qmsSend(dialogId: route.id, text: body, attachments: ids)
             text = ""
+            attach.items = []
+            showAttach = false
             await load()
         } catch {
             alert = ActionAlert(title: "Ошибка", message: error.localizedDescription)

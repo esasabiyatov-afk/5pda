@@ -440,7 +440,7 @@ struct PostView: View {
                             Circle().fill(PDATheme.online).frame(width: 7, height: 7).alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
                         }
                         Text(post.authorName).font(.headline).lineLimit(1)
-                        Text("\(post.reputation)").font(.caption2).foregroundStyle(.secondary).baselineOffset(7)
+                        Text(verbatim: String(post.reputation)).font(.caption2).foregroundStyle(.secondary).baselineOffset(7)
                     }
                     Text(PDAAPI.groups[post.authorGroup] ?? "")
                         .font(.subheadline).foregroundStyle(PDATheme.groupColor(post.authorGroup))
@@ -455,10 +455,11 @@ struct PostView: View {
                             .font(.subheadline.bold())
                             .foregroundStyle(post.ratingValue > 0 ? .green : post.ratingValue < 0 ? .red : .secondary)
                     }
-                    Spacer(minLength: 0)
                     Text(post.date.pdaFormatted).font(.caption).foregroundStyle(.secondary)
                 }
+                .fixedSize()
             }
+            .fixedSize(horizontal: false, vertical: true)
             if number == 1, collapseHeader, !headerOpen {
                 Button { headerOpen = true } label: {
                     Label("Шапка темы свёрнута — показать", systemImage: "chevron.down").font(.footnote)

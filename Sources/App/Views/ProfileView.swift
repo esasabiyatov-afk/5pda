@@ -39,7 +39,7 @@ struct ProfileView: View {
                             }
                         }
                         LabeledContent("Регистрация", value: Self.day.string(from: p.registered))
-                        LabeledContent("Предупреждения", value: "\(p.warnLevel)%")
+                        if p.warnLevel >= 0 { LabeledContent("Предупреждения", value: "\(p.warnLevel)%") }
                         if p.lastVisit.timeIntervalSince1970 > 0 {
                             LabeledContent("Последнее посещение", value: p.lastVisit.pdaFormatted)
                         }
