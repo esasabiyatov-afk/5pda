@@ -25,13 +25,20 @@ final class PDAConnection {
     private var handshakeDone = false
     private var pingTimer: DispatchSourceTimer?
 
-    func connect(host: String, port: UInt16, hostHeader: String, completion: @escaping (Result<Void, Error>) -> Void) {
-        let tls = NWProtocolTLS.Options()
-        sec_protocol_options_set_tls_server_name(tls.securityProtocolOptions, host)
+    /// - Parameter webSocketHost: nil — «сырое» TCP-соединение (основной режим, порт 993),
+    ///   иначе TLS + HTTP-рукопожатие WebSocket с этим Host (запасной режим, порт 443).
+    func connect(host: String, port: UInt16, webSocketHost: String?, completion: @escaping (Result<Void, Error>) -> Void) {
         let tcp = NWProtocolTCP.Options()
         tcp.enableKeepalive = true
-        tcp.connectionTimeout = 15
-        let params = NWParameters(tls: tls, tcp: tcp)
+        tcp.connectionTimeout = 10
+        let params: NWParameters
+        if webSocketHost != nil {
+            let tls = NWProtocolTLS.Options()
+            sec_protocol_options_set_tls_server_name(tls.securityProtocolOptions, host)
+            params = NWParameters(tls: tls, tcp: tcp)
+        } else {
+            params = NWParameters(tls: nil, tcp: tcp)
+        }
         guard let nwPort = NWEndpoint.Port(rawValue: port) else { return }
         let conn = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: params)
         connection = conn
@@ -50,12 +57,20 @@ final class PDAConnection {
             guard let self = self else { return }
             switch state {
             case .ready:
-                self.sendHandshake(hostHeader: hostHeader, completion: finish)
+                if let wsHost = webSocketHost {
+                    self.sendHandshake(hostHeader: wsHost, completion: finish)
+                } else {
+                    self.handshakeDone = true
+                    self.startPing()
+                    finish(.success(()))
+                    self.receive()
+                }
             case .failed(let error):
                 finish(.failure(error))
                 self.handleClose(error)
             case .waiting(let error):
                 finish(.failure(error))
+                self.handleClose(error)
                 conn.cancel()
             case .cancelled:
                 finish(.failure(ConnError.closed))
@@ -115,7 +130,7 @@ final class PDAConnection {
                     let head = String(decoding: self.buffer[self.buffer.startIndex..<range.lowerBound], as: UTF8.self)
                     self.buffer = Data(self.buffer[range.upperBound...])
                     let status = head.components(separatedBy: "\r\n").first ?? ""
-                    if status.contains(" 101") {
+                    if status.contains(" 101") || head.contains("101 Switching Protocols") {
                         self.handshakeDone = true
                         self.startPing()
                         handshakeCB?(.success(()))

@@ -44,7 +44,7 @@ final class PDAClient: ObservableObject {
     private(set) var siteURL = URL(string: "https://4pda.to/")!
     private var socketHost = "app.4pda.to"
     private var socketPort: UInt16 = 993
-    private var hostHeader = "app.4pda.ru"
+    private var hostHeader = "app.4pda.ru"  // хост запасного подключения (TLS + WebSocket, порт 443)
 
     private var connection: PDAConnection?
     private var nextRequestId = 1
@@ -131,6 +131,7 @@ final class PDAClient: ObservableObject {
             connectWaiters.removeAll()
             waiters.forEach { $0.resume() }
         } catch {
+            appendLog(outgoing: false, "Ошибка подключения: \(error.localizedDescription)")
             status = .failed(error.localizedDescription)
             connection?.disconnect()
             connection = nil
@@ -148,9 +149,19 @@ final class PDAClient: ObservableObject {
             "https://provision.app.devapps.ru/",
         ]
         for source in sources {
-            guard let url = URL(string: source),
-                  let (data, _) = try? await URLSession.shared.data(from: url),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { continue }
+            guard let url = URL(string: source) else { continue }
+            let json: [String: String]
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                guard let parsed = try JSONSerialization.jsonObject(with: data) as? [String: String] else {
+                    appendLog(outgoing: false, "provision \(url.host ?? ""): неожиданный формат")
+                    continue
+                }
+                json = parsed
+            } catch {
+                appendLog(outgoing: false, "provision \(url.host ?? ""): \(error.localizedDescription)")
+                continue
+            }
             if let b = json["b"], let u = URL(string: b) { siteURL = u; PDAConfig.siteURL = u }
             if let d = json["d"] {
                 let parts = d.split(separator: ":")
@@ -164,21 +175,41 @@ final class PDAClient: ObservableObject {
         }
     }
 
+    /// Основной путь — «сырой» TCP на app.4pda.to:993; если не вышло — TLS + WebSocket на порт 443.
     private func openSocket() async throws {
+        do {
+            try await openSocket(host: socketHost, port: socketPort, webSocketHost: nil)
+        } catch {
+            appendLog(outgoing: false, "Основное подключение не удалось: \(error.localizedDescription). Пробую запасное.")
+            try await openSocket(host: hostHeader, port: 443, webSocketHost: hostHeader)
+        }
+    }
+
+    private func openSocket(host: String, port: UInt16, webSocketHost: String?) async throws {
         let conn = PDAConnection()
         conn.onMessage = { [weak self] data in
             Task { @MainActor in self?.handle(data) }
         }
-        conn.onClose = { [weak self] error in
-            Task { @MainActor in self?.handleClose(error) }
+        conn.onClose = { [weak self, weak conn] error in
+            Task { @MainActor in
+                guard let self = self, self.connection === conn else { return }
+                self.handleClose(error)
+            }
         }
         connection = conn
-        let host = socketHost, port = socketPort, header = hostHeader
-        appendLog(outgoing: true, "connect \(host):\(port) (Host: \(header))")
-        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-            conn.connect(host: host, port: port, hostHeader: header) { result in
-                cont.resume(with: result)
+        appendLog(outgoing: true, "connect \(host):\(port)" + (webSocketHost.map { " TLS+WebSocket (Host: \($0))" } ?? " TCP"))
+        do {
+            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+                conn.connect(host: host, port: port, webSocketHost: webSocketHost) { result in
+                    cont.resume(with: result)
+                }
             }
+            appendLog(outgoing: false, "Подключено к \(host):\(port)")
+        } catch {
+            connection = nil
+            conn.onClose = nil
+            conn.disconnect()
+            throw error
         }
     }
 
