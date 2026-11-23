@@ -48,6 +48,8 @@ struct AccountView: View {
                 }
             }
 
+            UpdateSection()
+
             Section {
                 Text("Неофициальный клиент 4PDA для iOS.")
                     .font(.footnote)

@@ -21,6 +21,10 @@ https://github.com/esasabiyatov-afk/5pda/releases/latest/download/source.json
 
 SideStore → Sources → «+» → вставьте ссылку. Обновления будут приходить автоматически после каждой сборки.
 
+## LiveContainer
+Скачайте `5PDA.ipa` из последнего релиза и добавьте в LiveContainer через «+».
+Обновления: «Аккаунт → Обновления» — приложение само проверит новую версию, скачает её и откроет меню «Поделиться», где нужно выбрать LiveContainer.
+
 ## Сборка
 GitHub Actions (`.github/workflows/build.yml`) собирает неподписанный `.ipa` на каждый push.
 Каждая сборка публикуется как GitHub Release (`5PDA.ipa` + `source.json` для SideStore). Установить его можно через Sideloadly, AltStore или TrollStore.
