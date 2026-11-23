@@ -12,9 +12,18 @@
 - Вход по логину и паролю (ключ хранится в Keychain)
 - Журнал соединения и ручная отправка команд протокола (Аккаунт → Журнал соединения)
 
+## Установка через SideStore / AltStore
+Добавьте источник:
+
+```
+https://github.com/esasabiyatov-afk/5pda/releases/latest/download/source.json
+```
+
+SideStore → Sources → «+» → вставьте ссылку. Обновления будут приходить автоматически после каждой сборки.
+
 ## Сборка
 GitHub Actions (`.github/workflows/build.yml`) собирает неподписанный `.ipa` на каждый push.
-Готовый файл — в артефакте `5PDA-unsigned-ipa` на странице запуска. Установить его можно через Sideloadly, AltStore или TrollStore.
+Каждая сборка публикуется как GitHub Release (`5PDA.ipa` + `source.json` для SideStore). Установить его можно через Sideloadly, AltStore или TrollStore.
 
 Локально (нужен macOS с Xcode):
 ```sh

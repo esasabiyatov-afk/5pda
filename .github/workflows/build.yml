@@ -2,18 +2,28 @@ name: Build IPA
 
 on:
   push:
+    paths-ignore:
+      - "**.md"
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    name: Build unsigned IPA
+    name: Build IPA and publish SideStore source
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set version
+        run: |
+          echo "BUILD_NUMBER=${GITHUB_RUN_NUMBER}" >> $GITHUB_ENV
+          echo "APP_VERSION=0.1.${GITHUB_RUN_NUMBER}" >> $GITHUB_ENV
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -31,8 +41,9 @@ jobs:
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
+            MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            build | tee xcodebuild.log | grep -E '(error|warning: unre|BUILD)' || true
+            build | tee xcodebuild.log | grep -E '(error|BUILD)' || true
           test -d build/Build/Products/Release-iphoneos/FivePDA.app
 
       - name: Show errors
@@ -43,13 +54,42 @@ jobs:
         run: |
           mkdir -p Payload
           cp -R build/Build/Products/Release-iphoneos/FivePDA.app Payload/
-          VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Payload/FivePDA.app/Info.plist)
-          zip -qry "5PDA_${VERSION}_${GITHUB_RUN_NUMBER}.ipa" Payload
-          ls -la *.ipa
+          zip -qry "5PDA.ipa" Payload
+          ls -la 5PDA.ipa
 
-      - name: Upload IPA
+      - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: 5PDA-unsigned-ipa
-          path: "*.ipa"
+          name: 5PDA-${{ env.APP_VERSION }}
+          path: 5PDA.ipa
           if-no-files-found: error
+
+      - name: Generate SideStore source
+        env:
+          RELEASE_NOTES: ${{ github.event.head_commit.message }}
+        run: |
+          python3 scripts/make_source.py "$GITHUB_REPOSITORY" "v$APP_VERSION" 5PDA.ipa "$APP_VERSION" "$BUILD_NUMBER"
+          cp docs/icon.png icon.png
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.APP_VERSION }}
+          name: 5PDA ${{ env.APP_VERSION }}
+          target_commitish: ${{ github.sha }}
+          body: ${{ github.event.head_commit.message }}
+          make_latest: true
+          files: |
+            5PDA.ipa
+            source.json
+            icon.png
+
+      - name: Summary
+        run: |
+          {
+            echo "### 5PDA $APP_VERSION"
+            echo ""
+            echo "SideStore source: https://github.com/$GITHUB_REPOSITORY/releases/latest/download/source.json"
+            echo ""
+            echo "IPA: https://github.com/$GITHUB_REPOSITORY/releases/download/v$APP_VERSION/5PDA.ipa"
+          } >> $GITHUB_STEP_SUMMARY
