@@ -29,3 +29,5 @@
 6 wait 4
 7 tap 1012 522
 7 wait 3
+8 tap 540 984
+8 wait 2
