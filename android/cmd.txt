@@ -47,3 +47,9 @@
 15 wait 1
 15 tap 401 707
 15 wait 4
+16 back
+16 wait 1
+16 swipe 2 1000 700 1000 300
+16 wait 2
+16 tap 401 707
+16 wait 4
