@@ -67,7 +67,7 @@ while [ "$(date +%s)" -lt "$DEADLINE" ]; do
     [ -z "${n:-}" ] && continue
     echo "шаг $n: $verb $([ "$verb" = secret ] && echo '***' || echo "$args")"
     # shellcheck disable=SC2086
-    run_cmd "$verb" $args
+    run_cmd "$verb" $args < /dev/null
     sleep 0.7
     STEP=$n
   done <<< "$NEW"

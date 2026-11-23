@@ -1,17 +1,1 @@
 0 wait 1
-1 tap 997 2082
-2 tap 997 2082
-3 tap 997 2082
-4 tap 997 2082
-5 tap 1011 152
-5 wait 3
-6 tap 540 491
-6 secret login
-6 tap 540 673
-6 secret password
-6 key 111
-6 tap 540 971
-6 wait 5
-7 tap 540 491
-7 wait 1
-7 text hello
