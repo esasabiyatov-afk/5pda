@@ -31,7 +31,11 @@ struct ProfileView: View {
                         LabeledContent("Статьи на сайте", value: String(p.sitePosts))
                         LabeledContent("Комментарии", value: String(p.comments))
                         LabeledContent("Регистрация", value: p.registered.pdaFormatted)
-                        LabeledContent("Последнее посещение", value: p.lastVisit.pdaFormatted)
+                        if p.lastVisit.timeIntervalSince1970 > 0 {
+                            LabeledContent("Последнее посещение", value: p.lastVisit.pdaFormatted)
+                        }
+                        if !p.birthday.isEmpty { LabeledContent("День рождения", value: p.birthday) }
+                        if p.gender > 0 { LabeledContent("Пол", value: p.gender == 1 ? "Мужской" : "Женский") }
                     }
                     if !p.devices.isEmpty {
                         Section("Устройства") {

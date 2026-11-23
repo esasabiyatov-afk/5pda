@@ -35,6 +35,8 @@ struct NewsArticle {
     let item: NewsItem
     let bodyBB: String
     let comments: [NewsComment]
+    /// Картинки статьи: в тексте на них ссылается [attachment="номер:..."].
+    var images: [Attachment] = []
 }
 
 struct ForumEntry: Identifiable, Hashable {
@@ -182,7 +184,12 @@ enum PDAAPI {
         add(parent: 0, depth: 0)
         let known = Set(ordered.map(\.id))
         ordered += flat.filter { !known.contains($0.id) }
-        return NewsArticle(item: newsItem(data), bodyBB: data.string(10), comments: ordered)
+        // [номер, адрес, ширина, высота, подпись, полный адрес]
+        let images = data.array(11).map { i in
+            Attachment(id: i.int(0), isImage: true, name: HTMLEntities.decode(i.string(4)),
+                       url: i.string(5).isEmpty ? i.string(1) : i.string(5), width: i.int(2), height: i.int(3))
+        }
+        return NewsArticle(item: newsItem(data), bodyBB: data.string(10), comments: ordered, images: images)
     }
 
     /// Дерево форумов (`fi`): плоский список, категории помечены флагом 16.

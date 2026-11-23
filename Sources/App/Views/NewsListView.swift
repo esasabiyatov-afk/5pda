@@ -110,7 +110,7 @@ struct NewsDetailView: View {
                     .foregroundStyle(.secondary)
 
                 if let article = article {
-                    BBContentView(article.bodyBB)
+                    BBContentView(article.bodyBB, attachments: article.images)
                     if !article.comments.isEmpty {
                         Divider().padding(.vertical, 8)
                         HStack {

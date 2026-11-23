@@ -87,6 +87,8 @@ struct MemberProfile {
     let sitePosts: Int
     let comments: Int
     let devices: [(name: String, link: String, main: Bool)]
+    var birthday: String = ""
+    var gender: Int = 0
     let raw: PDAValue
 }
 
@@ -362,7 +364,8 @@ extension PDAAPI {
                              title: HTMLEntities.decode(d.string(4)), signatureBB: d.string(5),
                              registered: date(7), lastVisit: date(8), reputation: d.int(17), topics: d.int(18),
                              posts: d.int(19), sitePosts: d.int(15), comments: d.int(16),
-                             devices: devices.map { (name: $0.0, link: $0.1, main: $0.2) }, raw: d)
+                             devices: devices.map { (name: $0.0, link: $0.1, main: $0.2) },
+                             birthday: d.string(9), gender: d.int(10), raw: d)
     }
 
     enum SearchScope: Int { case all = 3, titles = 2, posts = 1 }
@@ -370,8 +373,8 @@ extension PDAAPI {
     /// Поиск по форуму (`rc`): [флаги, [форумы], [темы], [авторы], запрос, смещение, 20].
     static func search(_ query: String, scope: SearchScope = .all, topicId: Int? = nil, offset: Int = 0) async throws -> (total: Int, items: [SearchResult]) {
         let flags = 131072 | scope.rawValue | (topicId != nil ? 1 : 0)
-        let topics: PDAValue = topicId.map { .array([.int($0)]) } ?? .array([0])
-        let data = try await PDAClient.shared.call("rc", [.int(flags), .array([0]), topics, .array([0]),
+        let topics: PDAValue = topicId.map { .array([.int($0)]) } ?? .array([])
+        let data = try await PDAClient.shared.call("rc", [.int(flags), .array([]), topics, .array([]),
                                                           .string(query), .int(offset), .int(postsPerPage)])
         let items: [SearchResult] = data.array(1).compactMap { item in
             let type = item.int(0)
@@ -383,7 +386,8 @@ extension PDAAPI {
                 return .post(topicId: v.int(1), topicTitle: HTMLEntities.decode(BBParser.plainText(v.string(2))), post: p)
             }
             if type & 2 != 0 { return .topic(topicSummary(v)) }
-            if type & 4 != 0 { return .article(id: v.int(0), title: HTMLEntities.decode(v.string(1))) }
+            // Статья: поля как у новости, сдвинутые на 1 (заголовок — 9).
+            if type & 4 != 0 { return .article(id: v.int(0), title: HTMLEntities.decode(BBParser.plainText(v.string(9)))) }
             return nil
         }
         return (data.int(0), items)
