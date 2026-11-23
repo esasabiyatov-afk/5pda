@@ -175,3 +175,96 @@ struct SettingsView: View {
         .navigationTitle("Настройки")
     }
 }
+
+/// «О форуме» как в Android-клиенте.
+struct ForumInfoSheet: View {
+    let forumId: Int
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var router: Router
+    @State private var info: PDAAPI.ForumInfo?
+    @State private var error: String?
+
+    private var link: URL { URL(string: PDAConfig.siteURL.absoluteString + "forum/index.php?showforum=\(forumId)")! }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let i = info {
+                    List {
+                        Section {
+                            if !i.description.isEmpty { Text(i.description) }
+                            LabeledContent("Подфорумов") { Text("\(i.subforums)").bold() }
+                            LabeledContent("Топиков") { Text("\(i.topics)").bold() }
+                            LabeledContent("Постов") { Text("\(i.posts)").bold() }
+                        }
+                        if !i.moderators.isEmpty {
+                            Section("Модераторы") {
+                                ForEach(Array(i.moderators.enumerated()), id: \.offset) { _, m in
+                                    Button {
+                                        dismiss()
+                                        if m.id > 0 { router.push(ProfileRoute(id: m.id, nick: m.nick)) }
+                                    } label: {
+                                        Text(m.nick).foregroundStyle(PDATheme.groupColor(m.group))
+                                    }
+                                }
+                            }
+                        }
+                        Section {
+                            ShareLink(item: link) { Label(link.absoluteString, systemImage: "square.and.arrow.up").font(.footnote) }
+                        }
+                    }
+                    .navigationTitle(i.name)
+                } else if let e = error {
+                    Text(e).foregroundStyle(.red).padding()
+                } else {
+                    ProgressView()
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Закрыть") { dismiss() } } }
+            .task {
+                do { info = try await PDAAPI.forumInfo(forumId) } catch { self.error = error.localizedDescription }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
+/// «О теме»: по данным открытой темы.
+struct TopicInfoSheet: View {
+    let page: TopicPage
+    let created: Date?
+    let authorNick: String
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var router: Router
+
+    private var link: URL { URL(string: PDAConfig.siteURL.absoluteString + "forum/index.php?showtopic=\(page.id)")! }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    if !page.description.isEmpty { Text(page.description) }
+                    if page.authorId > 0 {
+                        Button {
+                            dismiss()
+                            router.push(ProfileRoute(id: page.authorId, nick: authorNick))
+                        } label: {
+                            LabeledContent("Автор") { Text(authorNick.isEmpty ? "#\(page.authorId)" : authorNick) }
+                        }
+                    }
+                    if let c = created { LabeledContent("Создана", value: c.pdaFormatted) }
+                    LabeledContent("Постов") { Text("\(page.totalPosts)").bold() }
+                    if page.flags & 16 != 0 { Label("Тема закрыта", systemImage: "lock.fill") }
+                }
+                Section {
+                    ShareLink(item: link) { Label(link.absoluteString, systemImage: "square.and.arrow.up").font(.footnote) }
+                }
+            }
+            .navigationTitle(page.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Закрыть") { dismiss() } } }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}

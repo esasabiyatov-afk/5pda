@@ -44,18 +44,25 @@ struct QMSListView: View {
                                 }
                             } header: {
                                 NavigationLink(value: ProfileRoute(id: c.id, nick: c.nick)) {
-                                    HStack(spacing: 8) {
-                                        RemoteImage(avatar: PDAAPI.absoluteURL(c.avatar))
-                                        .frame(width: 24, height: 24).clipShape(Circle())
-                                        Text(c.nick).font(.subheadline.bold()).textCase(nil)
-                                        if Date().timeIntervalSince(c.lastSeen) < 900 {
-                                            Circle().fill(.green).frame(width: 6, height: 6)
+                                    HStack(spacing: 10) {
+                                        AvatarView(url: c.avatar, size: 40)
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            HStack(spacing: 4) {
+                                                if Date().timeIntervalSince(c.lastSeen) < 900 {
+                                                    Circle().fill(PDATheme.online).frame(width: 7, height: 7)
+                                                }
+                                                Text(c.nick).font(.headline).foregroundStyle(.primary)
+                                            }
+                                            Text(PDAAPI.groups[c.group] ?? "").font(.caption)
+                                                .foregroundStyle(PDATheme.groupColor(c.group))
                                         }
+                                        Spacer()
                                         if c.unread > 0 {
-                                            Text("\(c.unread)").font(.caption2.bold()).padding(.horizontal, 6)
-                                                .background(Color.accentColor, in: Capsule()).foregroundStyle(.white)
+                                            Text("\(c.unread)").font(.caption2.bold()).padding(.horizontal, 7).padding(.vertical, 2)
+                                                .background(PDATheme.unreadDot, in: Capsule()).foregroundStyle(.white)
                                         }
                                     }
+                                    .textCase(nil)
                                 }
                             }
                         }

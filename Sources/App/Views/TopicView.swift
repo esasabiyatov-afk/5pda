@@ -26,6 +26,7 @@ struct TopicView: View {
     @State private var showSearch = false
     @AppStorage("collapse_polls") private var collapsePolls = false
     @State private var complaintPost: Post?
+    @State private var showInfo = false
     @State private var complaintText = ""
 
     init(route: TopicRoute) {
@@ -145,6 +146,9 @@ struct TopicView: View {
                 .environmentObject(client)
         }
         .alert(item: $alert) { Alert(title: Text($0.title), message: Text($0.message)) }
+        .sheet(isPresented: $showInfo) {
+            if let p = page { TopicInfoSheet(page: p, created: p.createdAt, authorNick: p.authorNick).environmentObject(router) }
+        }
         .alert("Жалоба на пост", isPresented: Binding(get: { complaintPost != nil }, set: { if !$0 { complaintPost = nil } })) {
             TextField("Опишите нарушение", text: $complaintText)
             Button("Отправить") {
@@ -185,6 +189,7 @@ struct TopicView: View {
                     }
                 }
                 Button { showSearch = true } label: { Label("Поиск в теме", systemImage: "magnifyingglass") }
+                Button { showInfo = true } label: { Label("О теме", systemImage: "info.circle") }
                 Button {
                     UIPasteboard.general.string = topicURL.absoluteString
                 } label: { Label("Копировать ссылку", systemImage: "link") }

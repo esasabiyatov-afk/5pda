@@ -112,6 +112,8 @@ struct Post: Identifiable, Hashable {
 }
 
 struct TopicPage {
+    var createdAt: Date?
+    var authorNick: String = ""
     let id: Int
     let title: String
     let description: String
@@ -237,7 +239,9 @@ enum PDAAPI {
             poll = Poll(title: HTMLEntities.decode(p.string(0)), totalVotes: p.int(1), voted: p.int(2) != 0,
                         questions: questions)
         }
-        return TopicPage(id: id, title: HTMLEntities.decode(data.string(2)),
+        return TopicPage(createdAt: created > 0 ? Date(timeIntervalSince1970: TimeInterval(created)) : nil,
+                         authorNick: HTMLEntities.decode(data.string(7)),
+                         id: id, title: HTMLEntities.decode(data.string(2)),
                          description: HTMLEntities.decode(data.string(3)),
                          totalPosts: data.int(11), flags: data.int(4), authorId: data.int(6),
                          posts: posts, poll: poll)

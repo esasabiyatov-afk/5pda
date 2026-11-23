@@ -93,6 +93,7 @@ struct ForumView: View {
     @State private var loadingMore = false
     @State private var exhausted = false
     @AppStorage("dismissed_forum_message") private var dismissedMessage = ""
+    @State private var showInfo = false
 
     var body: some View {
         Group {
@@ -178,6 +179,10 @@ struct ForumView: View {
                     Button {
                         Task { try? await PDAAPI.markRead(forum: route.id); await reload() }
                     } label: { Label("Отметить прочитанным", systemImage: "eye") }
+                    Button { showInfo = true } label: { Label("О форуме", systemImage: "info.circle") }
+                    Button {
+                        UIPasteboard.general.string = PDAConfig.siteURL.absoluteString + "forum/index.php?showforum=\(route.id)"
+                    } label: { Label("Копировать ссылку", systemImage: "link") }
                     BrowserLink(destination: URL(string: PDAConfig.siteURL.absoluteString + "forum/index.php?showforum=\(route.id)")!) {
                         Label("Открыть в браузере", systemImage: "safari")
                     }
@@ -185,6 +190,7 @@ struct ForumView: View {
             }
         }
         .task { if page == nil { await reload() } }
+        .sheet(isPresented: $showInfo) { ForumInfoSheet(forumId: route.id).environmentObject(router) }
     }
 
     private func reload() async {

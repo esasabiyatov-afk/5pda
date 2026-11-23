@@ -510,4 +510,21 @@ extension PDAAPI {
             throw PDAMessageError(message: "Слишком короткая жалоба")
         }
     }
+
+    struct ForumInfo {
+        let name: String
+        let description: String
+        let subforums: Int
+        let topics: Int
+        let posts: Int
+        let moderators: [(id: Int, nick: String, group: Int)]
+    }
+
+    /// О форуме (`fd`): [id] → [.., .., название, описание, .., .., подфорумов, тем, постов, [[id, ник, группа]]].
+    static func forumInfo(_ id: Int) async throws -> ForumInfo {
+        let d = try await PDAClient.shared.call("fd", [.int(id)])
+        return ForumInfo(name: HTMLEntities.decode(d.string(2)), description: HTMLEntities.decode(d.string(3)),
+                         subforums: d.int(6), topics: d.int(7), posts: d.int(8),
+                         moderators: d.array(9).map { (id: $0.int(0), nick: HTMLEntities.decode($0.string(1)), group: $0.int(2)) })
+    }
 }
