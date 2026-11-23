@@ -5,6 +5,8 @@ struct NewsListView: View {
     @State private var error: String?
     @State private var loading = false
     @State private var reachedEnd = false
+    @State private var categories: [PDAAPI.SiteCategory] = []
+    @State private var category: PDAAPI.SiteCategory?
 
     var body: some View {
         Group {
@@ -16,6 +18,10 @@ struct NewsListView: View {
                 List {
                     ForEach(items) { item in
                         NavigationLink(value: item) { NewsRow(item: item) }
+                            .listRowInsets(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color(uiColor: .systemBackground))
+                            .padding(.bottom, 2)
                             .onAppear {
                                 if item.id == items.last?.id { Task { await loadMore() } }
                             }
@@ -25,18 +31,47 @@ struct NewsListView: View {
                     }
                 }
                 .listStyle(.plain)
+                .environment(\.defaultMinListRowHeight, 0)
                 .refreshable { await reload() }
             }
         }
-        .navigationTitle("Новости")
-        .task { if items.isEmpty { await reload() } }
+        .navigationTitle(category?.title.capitalized ?? "Новости")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Menu {
+                    Button { select(nil) } label: { Label("Главная", systemImage: category == nil ? "checkmark" : "") }
+                    ForEach(categories) { c in
+                        Button { select(c) } label: { Label(c.title, systemImage: category == c ? "checkmark" : "") }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(category?.title.capitalized ?? "Новости").font(.headline)
+                        Image(systemName: "chevron.down").font(.caption.bold())
+                    }
+                    .foregroundStyle(.primary)
+                }
+            }
+        }
+        .task {
+            if items.isEmpty { await reload() }
+            if categories.isEmpty {
+                categories = ((try? await PDAAPI.siteMenu()) ?? []).filter { $0.parent == 0 }
+            }
+        }
+    }
+
+    private func select(_ c: PDAAPI.SiteCategory?) {
+        category = c
+        items = []
+        Task { await reload() }
     }
 
     private func reload() async {
         error = nil
         reachedEnd = false
         do {
-            items = try await PDAAPI.news()
+            items = try await PDAAPI.news(category: category?.id ?? 0)
             reachedEnd = items.count < 30
         } catch {
             self.error = error.localizedDescription
@@ -48,7 +83,7 @@ struct NewsListView: View {
         loading = true
         defer { loading = false }
         do {
-            let more = try await PDAAPI.news(offset: items.count)
+            let more = try await PDAAPI.news(offset: items.count, category: category?.id ?? 0)
             let known = Set(items.map(\.id))
             items += more.filter { !known.contains($0.id) }
             reachedEnd = more.count < 30
@@ -58,6 +93,7 @@ struct NewsListView: View {
     }
 }
 
+/// Карточка новости как в Android: картинка слева, жирный заголовок, время и комментарии.
 struct NewsRow: View {
     let item: NewsItem
 
@@ -66,20 +102,25 @@ struct NewsRow: View {
             RemoteImage(url: item.imageURL, contentMode: .fill) {
                 Color.secondary.opacity(0.15)
             }
-            .frame(width: 96, height: 64)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .frame(width: 136, height: 102)
+            .clipped()
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(item.title).font(.subheadline.weight(.semibold)).lineLimit(3)
-                HStack(spacing: 8) {
-                    Text(item.date.pdaFormatted)
-                    Label("\(item.commentsCount)", systemImage: "bubble.right")
+                Text(item.title)
+                    .font(.system(.headline, design: .default).weight(.heavy))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(4)
+                Spacer(minLength: 2)
+                HStack {
+                    Text(item.date.pdaShort)
+                    Spacer()
+                    Label("\(item.commentsCount)", systemImage: "bubble.left.fill")
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
+            .frame(minHeight: 102)
         }
-        .padding(.vertical, 4)
     }
 }
 

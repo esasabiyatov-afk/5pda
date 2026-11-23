@@ -62,7 +62,8 @@ final class Router: ObservableObject {
 
 /// Пункты «Ещё», тоже через NavigationPath.
 enum MoreRoute: Hashable {
-    case account, mentions, history, search, log, diagnostics
+    case account, mentions, history, search, log, diagnostics, more, settings
+    case userTopics(Int, String), userPosts(Int, String)
 }
 
 /// NavigationStack вкладки со своим роутером.

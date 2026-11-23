@@ -89,7 +89,11 @@ struct MemberProfile {
     let devices: [(name: String, link: String, main: Bool)]
     var birthday: String = ""
     var gender: Int = 0
+    var timezone: Int = 0
+    var siteKarma: Int = 0
+    var warnLevel: Int = 0
     let raw: PDAValue
+    var isOnline: Bool { lastVisit.timeIntervalSince1970 > 0 && Date().timeIntervalSince(lastVisit) < 900 }
 }
 
 enum SearchResult: Identifiable {
@@ -365,18 +369,14 @@ extension PDAAPI {
                              registered: date(7), lastVisit: date(8), reputation: d.int(17), topics: d.int(18),
                              posts: d.int(19), sitePosts: d.int(15), comments: d.int(16),
                              devices: devices.map { (name: $0.0, link: $0.1, main: $0.2) },
-                             birthday: d.string(9), gender: d.int(10), raw: d)
+                             birthday: d.string(9), gender: d.int(10), timezone: d.int(11),
+                             siteKarma: d.int(14), warnLevel: d.int(26), raw: d)
     }
 
     enum SearchScope: Int { case all = 3, titles = 2, posts = 1 }
 
-    /// Поиск по форуму (`rc`): [флаги, [форумы], [темы], [авторы], запрос, смещение, 20].
-    static func search(_ query: String, scope: SearchScope = .all, topicId: Int? = nil, offset: Int = 0) async throws -> (total: Int, items: [SearchResult]) {
-        let flags = 131072 | scope.rawValue | (topicId != nil ? 1 : 0)
-        let topics: PDAValue = topicId.map { .array([.int($0)]) } ?? .array([])
-        let data = try await PDAClient.shared.call("rc", [.int(flags), .array([]), topics, .array([]),
-                                                          .string(query), .int(offset), .int(postsPerPage)])
-        let items: [SearchResult] = data.array(1).compactMap { item in
+    static func parseSearchItems(_ data: PDAValue) -> [SearchResult] {
+        data.array(1).compactMap { item -> SearchResult? in
             let type = item.int(0)
             let rest = Array((item.arrayValue ?? []).dropFirst())
             let v = PDAValue.array(rest)
@@ -390,6 +390,15 @@ extension PDAAPI {
             if type & 4 != 0 { return .article(id: v.int(0), title: HTMLEntities.decode(BBParser.plainText(v.string(9)))) }
             return nil
         }
+    }
+
+    /// Поиск по форуму (`rc`): [флаги, [форумы], [темы], [авторы], запрос, смещение, 20].
+    static func search(_ query: String, scope: SearchScope = .all, topicId: Int? = nil, offset: Int = 0) async throws -> (total: Int, items: [SearchResult]) {
+        let flags = 131072 | scope.rawValue | (topicId != nil ? 1 : 0)
+        let topics: PDAValue = topicId.map { .array([.int($0)]) } ?? .array([])
+        let data = try await PDAClient.shared.call("rc", [.int(flags), .array([]), topics, .array([]),
+                                                          .string(query), .int(offset), .int(postsPerPage)])
+        let items = parseSearchItems(data)
         return (data.int(0), items)
     }
 
@@ -420,5 +429,74 @@ extension PDAAPI {
     /// Оценка комментария (`sk`): [id статьи, id комментария, +1/-1].
     static func rateComment(articleId: Int, commentId: Int, up: Bool) async throws {
         _ = try await PDAClient.shared.call("sk", [.int(articleId), .int(commentId), .int(up ? 1 : -1)])
+    }
+
+    // MARK: Меню сайта, закладки, счётчики
+
+    struct SiteCategory: Identifiable, Hashable { let id: Int; let tid: Int; let title: String; let parent: Int }
+
+    /// Меню сайта (`sm`): [версия] → [версия, [[id, tid, адрес, название, скрыт, родитель]]].
+    static func siteMenu() async throws -> [SiteCategory] {
+        let data = try await PDAClient.shared.call("sm", [0])
+        return data.array(1).compactMap { c in
+            c.int(4) != 0 ? nil : SiteCategory(id: c.int(0), tid: c.int(1), title: HTMLEntities.decode(c.string(3)), parent: c.int(5))
+        }
+    }
+
+    struct Bookmark: Identifiable, Hashable {
+        let id: Int
+        let isFolder: Bool
+        let parent: Int
+        let order: Int
+        let title: String
+        let url: String
+    }
+
+    /// Закладки (`mb`): [время синхронизации, [изменения]] →
+    /// [время, [[id, новый id]], [[id, изменено, удалено, флаги, папка, порядок, название, адрес]]].
+    static func bookmarks() async throws -> [Bookmark] {
+        let data = try await PDAClient.shared.call("mb", [0, .array([])])
+        return data.array(2).compactMap { b in
+            b.int(2) != 0 ? nil : Bookmark(id: b.int(0), isFolder: b.int(3) & 1 != 0, parent: b.int(4), order: b.int(5),
+                                           title: HTMLEntities.decode(b.string(6)), url: b.string(7))
+        }.sorted { $0.order < $1.order }
+    }
+
+    struct UnreadCounters: Equatable { var qms = 0, favorites = 0, mentions = 0 }
+
+    /// Счётчики непрочитанного (`mn`): [с какого времени, 0, 0] → [время, QMS, избранное, упоминания, [события]].
+    static func unreadCounters() async throws -> UnreadCounters {
+        let data = try await PDAClient.shared.call("mn", [0, 0, 0])
+        return UnreadCounters(qms: data.int(1), favorites: data.int(2), mentions: data.int(3))
+    }
+
+    struct ReputationEntry: Identifiable {
+        let id: Int
+        let date: Date
+        let positive: Bool
+        let fromId: Int
+        let fromNick: String
+        let whereTitle: String
+        let reasonBB: String
+        let cancelled: Bool
+    }
+
+    /// История репутации (`mr`): [id пользователя, режим (0 — полученная, 1 — выставленная), 0, 200].
+    static func reputationHistory(userId: Int, given: Bool = false) async throws -> [ReputationEntry] {
+        let data = try await PDAClient.shared.call("mr", [.int(userId), .int(given ? 1 : 0), 0, 200])
+        return data.array(1).map { r in
+            ReputationEntry(id: r.int(0), date: Date(timeIntervalSince1970: TimeInterval(r.int(1))),
+                            positive: r.int(2) > 0, fromId: r.int(3), fromNick: HTMLEntities.decode(r.string(4)),
+                            whereTitle: HTMLEntities.decode(BBParser.plainText(r.string(5))), reasonBB: r.string(10),
+                            cancelled: r.int(6) & 2 != 0)
+        }
+    }
+
+    /// Поиск сообщений или тем пользователя (`rc` с фильтром по автору).
+    static func searchByAuthor(_ userId: Int, topics: Bool, offset: Int = 0) async throws -> (total: Int, items: [SearchResult]) {
+        let flags = 131072 | (topics ? SearchScope.titles.rawValue : SearchScope.posts.rawValue)
+        let data = try await PDAClient.shared.call("rc", [.int(flags), .array([]), .array([]), .array([.int(userId)]),
+                                                          "", .int(offset), .int(postsPerPage)])
+        return (data.int(0), parseSearchItems(data))
     }
 }

@@ -104,7 +104,7 @@ struct FavoritesView: View {
     private func rowLabel(_ item: FavoriteItem) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                if item.hasUnread { Circle().fill(Color.accentColor).frame(width: 8, height: 8) }
+                if item.hasUnread { Circle().fill(PDATheme.unreadDot).frame(width: 9, height: 9) }
                 if item.isForum { Image(systemName: "folder").foregroundStyle(.secondary) }
                 Text(item.title)
                     .font(.subheadline.weight(item.hasUnread ? .semibold : .regular))
@@ -241,7 +241,7 @@ struct MentionsView: View {
     private func mentionLabel(_ m: MentionItem) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                if m.unread { Circle().fill(Color.accentColor).frame(width: 8, height: 8) }
+                if m.unread { Circle().fill(PDATheme.unreadDot).frame(width: 9, height: 9) }
                 Image(systemName: m.isSite ? "newspaper" : "bubble.left").foregroundStyle(.secondary)
                 Text(m.title).font(.subheadline.bold()).lineLimit(2)
             }
@@ -297,22 +297,7 @@ struct SearchView: View {
                 if let e = error { Text(e).foregroundStyle(.red) }
                 else if searched { Text("Найдено: \(total)") }
             }
-            ForEach(results) { r in
-                switch r {
-                case .topic(let t):
-                    TopicRow(topic: t)
-                case .post(let tid, let title, let p):
-                    NavigationLink(value: TopicRoute(id: tid, title: title, jump: .post(p.id))) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(title).font(.subheadline.bold()).lineLimit(2)
-                            Text("\(p.authorName) · \(p.date.pdaFormatted)").font(.caption).foregroundStyle(.secondary)
-                            Text(BBParser.plainText(p.bodyBB)).font(.footnote).lineLimit(4)
-                        }
-                    }
-                case .article(let id, let title):
-                    NavigationLink(value: ArticleRoute(id: id)) { Text(title) }
-                }
-            }
+            ForEach(results) { r in SearchResultRow(result: r) }
             if results.count < total, !results.isEmpty {
                 Button("Ещё") { Task { await search(more: true) } }
             }

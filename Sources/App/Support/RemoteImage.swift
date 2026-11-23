@@ -26,6 +26,11 @@ final class ImageLoader: @unchecked Sendable {
 
     func cached(_ url: URL) -> UIImage? { cache.object(forKey: url as NSURL) }
 
+    func clear() {
+        cache.removeAllObjects()
+        session.configuration.urlCache?.removeAllCachedResponses()
+    }
+
     func load(_ url: URL) async -> UIImage? {
         if let img = cached(url) { return img }
         lock.lock()
@@ -133,6 +138,8 @@ struct AvatarPlaceholder: View {
 /// Картинка в тексте поста: загружается, по нажатию открывается на весь экран.
 struct PostImage: View {
     let url: URL
+    @AppStorage("load_images") private var loadImages = true
+    @State private var manual = false
     @State private var image: UIImage?
     @State private var failed = false
     @State private var fullscreen = false
@@ -146,6 +153,11 @@ struct PostImage: View {
                     .frame(maxWidth: min(image.size.width, .infinity), maxHeight: 420, alignment: .leading)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .onTapGesture { fullscreen = true }
+            } else if !loadImages && !manual {
+                Button { manual = true; Task { await load() } } label: {
+                    Label("Изображение — нажмите, чтобы загрузить", systemImage: "photo").font(.footnote)
+                }
+                .buttonStyle(.borderless)
             } else if failed {
                 Button {
                     failed = false
@@ -160,7 +172,7 @@ struct PostImage: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .task(id: url) { await load() }
+        .task(id: url) { if loadImages || manual { await load() } }
         .fullScreenCover(isPresented: $fullscreen) {
             if let image = image { ImageViewer(image: image, url: url) }
         }

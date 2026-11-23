@@ -31,6 +31,10 @@ extension View {
                 case .search: SearchView()
                 case .log: DebugConsoleView()
                 case .diagnostics: DiagnosticsView()
+                case .more: MoreView()
+                case .settings: SettingsView()
+                case .userTopics(let id, let nick): UserContentView(userId: id, nick: nick, topics: true)
+                case .userPosts(let id, let nick): UserContentView(userId: id, nick: nick, topics: false)
                 }
             }
     }

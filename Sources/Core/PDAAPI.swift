@@ -70,6 +70,8 @@ struct ForumPage {
     let announcements: [ForumEntry]
     let topics: [TopicSummary]
     let totalTopics: Int
+    /// Объявление раздела (BB), показывается над списком.
+    var message: String = ""
 }
 
 struct Attachment: Hashable {
@@ -211,7 +213,8 @@ enum PDAAPI {
         }
         let topics = data.array(8).map { topicSummary($0) }
         return ForumPage(name: HTMLEntities.decode(data.string(2)), flags: data.int(3),
-                         subforums: sub, announcements: ann, topics: topics, totalTopics: data.int(7))
+                         subforums: sub, announcements: ann, topics: topics, totalTopics: data.int(7),
+                         message: data.string(4))
     }
 
     /// Тема (`fr`): [id темы, смещение, постов на страницу, 0].

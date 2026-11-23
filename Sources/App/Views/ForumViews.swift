@@ -5,6 +5,13 @@ import UIKit
 /// Дерево форумов: категории и разделы.
 struct ForumsView: View {
     @State private var state: LoadState<[ForumEntry]> = .loading
+    @AppStorage("collapsed_categories") private var collapsedRaw = ""
+    private var collapsed: Set<Int> { Set(collapsedRaw.split(separator: ",").compactMap { Int($0) }) }
+    private func toggle(_ id: Int) {
+        var c = collapsed
+        if c.contains(id) { c.remove(id) } else { c.insert(id) }
+        collapsedRaw = c.map(String.init).joined(separator: ",")
+    }
 
     var body: some View {
         content
@@ -21,18 +28,32 @@ struct ForumsView: View {
         case .loaded(let entries):
             List {
                 ForEach(Array(sections(entries).enumerated()), id: \.offset) { _, section in
-                    Section(section.0.name) {
+                    Section {
+                        if !collapsed.contains(section.0.id) {
                         ForEach(section.1) { forum in
                             NavigationLink(value: ForumRoute(id: forum.id, name: forum.name)) {
                                 HStack {
                                     Text(forum.name)
                                     if forum.hasUnread {
                                         Spacer()
-                                        Circle().fill(Color.accentColor).frame(width: 8, height: 8)
+                                        Circle().fill(PDATheme.unreadDot).frame(width: 9, height: 9)
                                     }
                                 }
                             }
                         }
+                        }
+                    } header: {
+                        Button { withAnimation { toggle(section.0.id) } } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: collapsed.contains(section.0.id) ? "chevron.right" : "chevron.down")
+                                    .font(.caption.bold())
+                                Text(section.0.name).font(.title3).textCase(nil)
+                                Spacer()
+                            }
+                            .foregroundStyle(.primary)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -71,6 +92,7 @@ struct ForumView: View {
     @State private var error: String?
     @State private var loadingMore = false
     @State private var exhausted = false
+    @AppStorage("dismissed_forum_message") private var dismissedMessage = ""
 
     var body: some View {
         Group {
@@ -78,6 +100,22 @@ struct ForumView: View {
                 ErrorView(message: error) { Task { await reload() } }
             } else if let page = page {
                 List {
+                    if !page.message.isEmpty, dismissedMessage != page.message {
+                        HStack(alignment: .top) {
+                            BBContentView(page.message)
+                            Button { dismissedMessage = page.message } label: {
+                                Image(systemName: "xmark.circle").foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                    if !page.announcements.isEmpty {
+                        Section("Объявления") {
+                            ForEach(page.announcements) { a in
+                                Label(a.name, systemImage: "megaphone").font(.subheadline)
+                            }
+                        }
+                    }
                     if !page.subforums.isEmpty {
                         Section("Подфорумы") {
                             ForEach(page.subforums) { f in
@@ -92,7 +130,7 @@ struct ForumView: View {
                                     NavigationLink(value: ForumRoute(id: f.id, name: f.name)) {
                                         HStack {
                                             Text(f.name)
-                                            if f.hasUnread { Spacer(); Circle().fill(Color.accentColor).frame(width: 8, height: 8) }
+                                            if f.hasUnread { Spacer(); Circle().fill(PDATheme.unreadDot).frame(width: 9, height: 9) }
                                         }
                                     }
                                 }
@@ -178,36 +216,70 @@ struct ForumView: View {
     }
 }
 
+/// Строка темы как в Android: название, дата и автор последнего поста; зелёная точка
+/// справа — есть новое, нажатие на неё ведёт к непрочитанному.
 struct TopicRow: View {
     let topic: TopicSummary
+    @EnvironmentObject private var router: Router
+    @AppStorage("topic_open_mode") private var openMode = 0  // 0 — в начало, 1 — к непрочитанному, 2 — в конец
+
+    private var defaultJump: TopicRoute.Jump {
+        switch openMode {
+        case 1: return topic.hasUnread ? .unread : .start
+        case 2: return .last
+        default: return .start
+        }
+    }
 
     var body: some View {
-        NavigationLink(value: TopicRoute(id: topic.id, title: topic.title, jump: topic.hasUnread ? .unread : .start)) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    if topic.hasUnread {
-                        Circle().fill(Color.accentColor).frame(width: 8, height: 8)
+        HStack(spacing: 8) {
+            Button { router.push(TopicRoute(id: topic.id, title: topic.title, jump: defaultJump)) } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 4) {
+                        if topic.isPinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary) }
+                        if topic.isClosed { Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary) }
+                        Text((topic.isMoved ? "Перемещено: " : "") + topic.title)
+                            .font(.body.weight(topic.isHighlighted ? .semibold : .regular))
+                            .foregroundStyle(topic.isClosed ? .secondary : .primary)
+                            .multilineTextAlignment(.leading)
                     }
-                    Text((topic.isMoved ? "Перемещено: " : "") + topic.title)
-                        .font(.subheadline.weight(topic.hasUnread ? .semibold : .regular))
-                        .foregroundStyle(topic.isClosed ? .secondary : .primary)
-                }
-                if !topic.description.isEmpty {
-                    Text(topic.description).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                }
-                HStack(spacing: 4) {
-                    if topic.isPinned { Image(systemName: "pin.fill") }
-                    if topic.isClosed { Image(systemName: "lock.fill") }
-                    Text("\(topic.lastPoster) · \(topic.lastPostDate.pdaFormatted)")
-                    if topic.postCount > 0 {
-                        Spacer()
-                        Label("\(topic.postCount)", systemImage: "text.bubble")
+                    if !topic.description.isEmpty {
+                        Text(topic.description).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     }
+                    HStack(spacing: 4) {
+                        Text(topic.lastPostDate.pdaFormatted)
+                        Image(systemName: "person.fill").font(.system(size: 9))
+                        Text(topic.lastPoster)
+                        if topic.postCount > 0 {
+                            Text("· \(topic.postCount)")
+                        }
+                    }
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            if topic.hasUnread {
+                Button { router.push(TopicRoute(id: topic.id, title: topic.title, jump: .unread)) } label: {
+                    Circle().fill(PDATheme.unreadDot).frame(width: 11, height: 11).padding(10)
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .contextMenu {
+            Button { router.push(TopicRoute(id: topic.id, title: topic.title, jump: .last)) } label: {
+                Label("Перейти в конец", systemImage: "arrow.down.to.line")
+            }
+            Button { router.push(TopicRoute(id: topic.id, title: topic.title, jump: .unread)) } label: {
+                Label("К непрочитанному", systemImage: "eye")
+            }
+            Button { Task { try? await PDAAPI.setTopicSubscribed(topic.id, true) } } label: {
+                Label("В избранное", systemImage: "star")
+            }
+            Button {
+                UIPasteboard.general.string = PDAConfig.siteURL.absoluteString + "forum/index.php?showtopic=\(topic.id)"
+            } label: { Label("Копировать ссылку", systemImage: "link") }
         }
     }
 }
-

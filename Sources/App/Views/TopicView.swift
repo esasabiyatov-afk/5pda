@@ -24,6 +24,7 @@ struct TopicView: View {
     @State private var alert: ActionAlert?
     @State private var reputationTarget: Post?
     @State private var showSearch = false
+    @AppStorage("collapse_polls") private var collapsePolls = false
 
     init(route: TopicRoute) {
         self.route = route
@@ -67,8 +68,16 @@ struct TopicView: View {
                                 Text(page.description).font(.footnote).foregroundStyle(.secondary)
                             }
                             if let poll = page.poll {
-                                PollView(poll: poll, topicId: topicId, canVote: page.flags & 4 == 0) {
-                                    Task { await load(startOffset) }
+                                if collapsePolls {
+                                    DisclosureGroup("Опрос: \(poll.title)") {
+                                        PollView(poll: poll, topicId: topicId, canVote: page.flags & 4 == 0) {
+                                            Task { await load(startOffset) }
+                                        }
+                                    }
+                                } else {
+                                    PollView(poll: poll, topicId: topicId, canVote: page.flags & 4 == 0) {
+                                        Task { await load(startOffset) }
+                                    }
                                 }
                             }
                         }
@@ -383,30 +392,32 @@ struct PostView: View {
     var number: Int = 0
     var highlighted = false
     @EnvironmentObject private var router: Router
+    @AppStorage("show_signatures") private var showSignatures = true
+    @AppStorage("collapse_header") private var collapseHeader = false
+    @State private var headerOpen = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Шапка поста как в Android-клиенте: аватар 50, ник, группа, дата; справа номер, карма, репутация.
+            // Шапка поста как в Android-клиенте: аватар, точка «в сети», ник, репутация
+            // верхним индексом, группа своим цветом, дата справа.
             HStack(alignment: .top, spacing: 10) {
                 Button { router.push(ProfileRoute(id: post.authorId, nick: post.authorName)) } label: {
-                    RemoteImage(avatar: PDAAPI.absoluteURL(post.avatar))
-                        .frame(width: 44, height: 44)
-                        .clipShape(Circle())
-                        .overlay(alignment: .bottomTrailing) {
-                            if post.isOnline {
-                                Circle().fill(.green).frame(width: 11, height: 11)
-                                    .overlay(Circle().stroke(Color(uiColor: .systemBackground), lineWidth: 2))
-                            }
-                        }
+                    AvatarView(url: post.avatar, size: 46)
                 }
                 .buttonStyle(.plain)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(post.authorName).font(.headline).foregroundStyle(Color.accentColor).lineLimit(1)
-                    Text(PDAAPI.groups[post.authorGroup] ?? "").font(.caption).foregroundStyle(.secondary)
-                    Text(post.date.pdaFormatted).font(.caption2).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        if post.isOnline {
+                            Circle().fill(PDATheme.online).frame(width: 7, height: 7).alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
+                        }
+                        Text(post.authorName).font(.headline).lineLimit(1)
+                        Text("\(post.reputation)").font(.caption2).foregroundStyle(.secondary).baselineOffset(7)
+                    }
+                    Text(PDAAPI.groups[post.authorGroup] ?? "")
+                        .font(.subheadline).foregroundStyle(PDATheme.groupColor(post.authorGroup))
                 }
                 Spacer(minLength: 4)
-                VStack(alignment: .trailing, spacing: 2) {
+                VStack(alignment: .trailing, spacing: 3) {
                     if number > 0 {
                         Text("#\(number)").font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
                     }
@@ -415,11 +426,18 @@ struct PostView: View {
                             .font(.subheadline.bold())
                             .foregroundStyle(post.ratingValue > 0 ? .green : post.ratingValue < 0 ? .red : .secondary)
                     }
-                    Label("\(post.reputation)", systemImage: "hand.thumbsup")
-                        .labelStyle(.titleAndIcon).font(.caption2).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Text(post.date.pdaFormatted).font(.caption).foregroundStyle(.secondary)
                 }
             }
-            BBContentView(post.bodyBB, attachments: post.attachments)
+            if number == 1, collapseHeader, !headerOpen {
+                Button { headerOpen = true } label: {
+                    Label("Шапка темы свёрнута — показать", systemImage: "chevron.down").font(.footnote)
+                }
+                .buttonStyle(.borderless)
+            } else {
+                BBContentView(post.bodyBB, attachments: post.attachments)
+            }
             let unused = post.attachments.filter { a in !post.bodyBB.contains("\(a.id)") }
             if !unused.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
@@ -438,13 +456,13 @@ struct PostView: View {
             if post.editDate != nil || !post.editReason.isEmpty {
                 VStack(alignment: .leading, spacing: 1) {
                     if let d = post.editDate {
-                        Text("Изменено: \(post.editedBy.isEmpty ? "" : post.editedBy + " — ")\(d.pdaFormatted)")
+                        Text("Отредактировал \(post.editedBy.isEmpty ? "" : post.editedBy + " - ")\(d.pdaFormatted)")
                     }
                     if !post.editReason.isEmpty { Text("Причина: \(post.editReason)") }
                 }
                 .font(.caption2).foregroundStyle(.secondary)
             }
-            if !post.signatureBB.isEmpty {
+            if showSignatures, !post.signatureBB.isEmpty {
                 Divider()
                 BBContentView(post.signatureBB)
                     .font(.caption)

@@ -28,7 +28,7 @@ struct QMSListView: View {
                                 ForEach(c.dialogs) { d in
                                     NavigationLink(value: QMSDialogRoute(id: d.id, title: "\(c.nick): \(d.title)")) {
                                         HStack {
-                                            if d.unread > 0 { Circle().fill(Color.accentColor).frame(width: 8, height: 8) }
+                                            if d.unread > 0 { Circle().fill(PDATheme.unreadDot).frame(width: 9, height: 9) }
                                             VStack(alignment: .leading, spacing: 2) {
                                                 Text(d.title).font(.subheadline.weight(d.unread > 0 ? .semibold : .regular))
                                                 Text("\(d.date.pdaFormatted) · сообщений: \(d.messageCount)")

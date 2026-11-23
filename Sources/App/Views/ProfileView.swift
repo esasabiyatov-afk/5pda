@@ -8,35 +8,66 @@ struct ProfileView: View {
     @State private var error: String?
     @State private var newDialog = false
     @State private var reputation = false
+    @State private var reputationList = false
+
+    private static let day: DateFormatter = {
+        let f = DateFormatter(); f.locale = Locale(identifier: "ru_RU"); f.dateFormat = "dd.MM.yy"; return f
+    }()
+
+    private func userTime(_ offset: Int) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "dd.MM.yyyy HH:mm"
+        f.timeZone = TimeZone(secondsFromGMT: offset)
+        return f.string(from: Date())
+    }
 
     var body: some View {
         Group {
             if let p = profile {
                 List {
                     Section {
-                        HStack(spacing: 14) {
-                            RemoteImage(avatar: PDAAPI.absoluteURL(p.avatar))
-                            .frame(width: 72, height: 72).clipShape(Circle())
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(p.nick).font(.title3.bold())
-                                Text(PDAAPI.groups[p.group] ?? "Группа \(p.group)").font(.subheadline).foregroundStyle(.secondary)
+                        HStack(alignment: .top, spacing: 14) {
+                            AvatarView(url: p.avatar, size: 72)
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack(spacing: 5) {
+                                    if p.isOnline { Circle().fill(PDATheme.online).frame(width: 8, height: 8) }
+                                    Text(p.nick).font(.title2.bold())
+                                }
+                                Text(PDAAPI.groups[p.group] ?? "Группа \(p.group)").font(.subheadline)
+                                    .foregroundStyle(PDATheme.groupColor(p.group))
                                 if !p.title.isEmpty { Text(p.title).font(.caption).foregroundStyle(.secondary) }
                             }
                         }
-                    }
-                    Section("Статистика") {
-                        LabeledContent("Репутация", value: String(p.reputation))
-                        LabeledContent("Темы", value: String(p.topics))
-                        LabeledContent("Посты на форуме", value: String(p.posts))
-                        LabeledContent("Статьи на сайте", value: String(p.sitePosts))
-                        LabeledContent("Комментарии", value: String(p.comments))
-                        LabeledContent("Регистрация", value: p.registered.pdaFormatted)
+                        LabeledContent("Регистрация", value: Self.day.string(from: p.registered))
+                        LabeledContent("Предупреждения", value: "\(p.warnLevel)%")
                         if p.lastVisit.timeIntervalSince1970 > 0 {
                             LabeledContent("Последнее посещение", value: p.lastVisit.pdaFormatted)
                         }
-                        if !p.birthday.isEmpty { LabeledContent("День рождения", value: p.birthday) }
-                        if p.gender > 0 { LabeledContent("Пол", value: p.gender == 1 ? "Мужской" : "Женский") }
                     }
+                    if p.gender > 0 || !p.birthday.isEmpty || p.timezone != 0 {
+                        Section("Личные данные") {
+                            if p.gender > 0 { Text(p.gender == 1 ? "Мужчина" : "Женщина").bold() }
+                            if !p.birthday.isEmpty { LabeledContent("Дата рождения", value: p.birthday) }
+                            LabeledContent("Время у юзера", value: userTime(p.timezone))
+                        }
+                    }
+                    Section("Сайт") {
+                        LabeledContent("Карма", value: String(format: "%.2f", Double(p.siteKarma) / 100))
+                        LabeledContent("Постов", value: String(p.sitePosts))
+                        LabeledContent("Комментов", value: String(p.comments))
+                    }
+                    Section("Форум") {
+                        Button { reputationList = true } label: {
+                            LabeledContent("Репутация") { Text("\(p.reputation)").bold() }
+                        }
+                        Button { router.push(MoreRoute.userTopics(p.id, p.nick)) } label: {
+                            LabeledContent("Тем") { Text("\(p.topics)").bold() }
+                        }
+                        Button { router.push(MoreRoute.userPosts(p.id, p.nick)) } label: {
+                            LabeledContent("Постов") { Text("\(p.posts)").bold() }
+                        }
+                    }
+                    .foregroundStyle(.primary)
                     if !p.devices.isEmpty {
                         Section("Устройства") {
                             ForEach(Array(p.devices.enumerated()), id: \.offset) { _, d in
@@ -75,6 +106,9 @@ struct ProfileView: View {
             NewQMSDialogSheet(userId: route.id, nick: profile?.nick ?? route.nick,
                               onDone: { newDialog = false }, onCreated: { router.push($0) })
         }
+        .sheet(isPresented: $reputationList) {
+            ReputationHistorySheet(userId: route.id, nick: profile?.nick ?? route.nick)
+        }
         .sheet(isPresented: $reputation) {
             ReputationSheet(userId: route.id, nick: profile?.nick ?? route.nick, postId: 0) {
                 reputation = false
@@ -112,11 +146,12 @@ struct MoreView: View {
                 NavigationLink(value: MoreRoute.search) { Label("Поиск", systemImage: "magnifyingglass") }
             }
             Section {
+                NavigationLink(value: MoreRoute.settings) { Label("Настройки", systemImage: "gearshape") }
                 NavigationLink(value: MoreRoute.diagnostics) { Label("Диагностика", systemImage: "stethoscope") }
                 NavigationLink(value: MoreRoute.log) { Label("Журнал соединения", systemImage: "terminal") }
             }
         }
-        .navigationTitle("Ещё")
+        .navigationTitle("Меню")
         .safeAreaInset(edge: .bottom) {
             Text("Нашли ошибку? Встряхните телефон на нужном экране.")
                 .font(.caption).foregroundStyle(.secondary).padding(.bottom, 6)
