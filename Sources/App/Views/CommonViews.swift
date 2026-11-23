@@ -70,10 +70,24 @@ struct BBBlockView: View {
     let block: BBBlock
     @State private var expanded = false
 
+    /// Текст со смайлами: куски с ссылкой pdasmile:// заменяются картинками.
+    static func render(_ text: AttributedString) -> Text {
+        guard text.runs.contains(where: { $0.link?.scheme == "pdasmile" }) else { return Text(text) }
+        var result = Text("")
+        for run in text.runs {
+            if let link = run.link, link.scheme == "pdasmile", let name = link.host, let img = Smilies.image(name) {
+                result = result + Text(Image(uiImage: img)).baselineOffset(-3)
+            } else {
+                result = result + Text(AttributedString(text[run.range]))
+            }
+        }
+        return result
+    }
+
     var body: some View {
         switch block {
         case .text(let text):
-            Text(text)
+            Self.render(text)
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .image(let url):
             PostImage(url: url)

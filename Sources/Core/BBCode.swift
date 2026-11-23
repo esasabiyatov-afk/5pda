@@ -93,10 +93,22 @@ struct BBParser {
             current += a
         }
 
+        func appendText(_ s: String) {
+            for piece in Smilies.split(s) {
+                switch piece {
+                case .text(let t): append(t)
+                case .smile(let sm):
+                    var a = AttributedString("\u{FFFC}")
+                    a.link = URL(string: "pdasmile://\(sm.img)")
+                    current += a
+                }
+            }
+        }
+
         while let token = tokens.popLast() {
             switch token.kind {
             case .text(let s):
-                append(s)
+                appendText(s)
             case .close(let name):
                 if name == closing { flushText(); return blocks }
                 if let idx = styles.lastIndex(where: { $0.0 == name }), idx > 0 {

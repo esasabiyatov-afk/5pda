@@ -192,6 +192,7 @@ struct BBToolbar: View {
     @State private var linkURL = ""
     @State private var askSpoiler = false
     @State private var spoilerTitle = ""
+    @State private var showSmiles = false
 
     private struct Tag: Identifiable { let id: String; let icon: String; let open: String; let close: String }
     private let simple: [Tag] = [
@@ -205,6 +206,7 @@ struct BBToolbar: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 2) {
+                button("face.smiling") { showSmiles = true }
                 ForEach(simple) { t in button(t.icon) { controller.wrap(t.open, t.close) } }
                 Menu {
                     ForEach(1...7, id: \.self) { n in Button("Размер \(n)") { controller.wrap("[SIZE=\(n)]", "[/SIZE]") } }
@@ -232,6 +234,13 @@ struct BBToolbar: View {
             .padding(.horizontal, 6)
         }
         .frame(height: 44)
+        .sheet(isPresented: $showSmiles) {
+            SmilePicker { code in
+                controller.insert(" \(code) ")
+                showSmiles = false
+            }
+            .presentationDetents([.medium, .large])
+        }
         .alert("Ссылка", isPresented: $askLink) {
             TextField("https://", text: $linkURL).textInputAutocapitalization(.never).keyboardType(.URL)
             Button("Вставить") { controller.wrap("[URL=\(linkURL)]", "[/URL]") }
@@ -250,5 +259,32 @@ struct BBToolbar: View {
 
     private func button(_ name: String, action: @escaping () -> Void) -> some View {
         Button(action: action) { icon(name) }.buttonStyle(.plain).foregroundStyle(.primary)
+    }
+}
+
+/// Выбор смайла.
+struct SmilePicker: View {
+    let onPick: (String) -> Void
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 56), spacing: 6)], spacing: 10) {
+                ForEach(Smilies.picker, id: \.img) { s in
+                    Button { onPick(s.code) } label: {
+                        VStack(spacing: 2) {
+                            if let img = Smilies.image(s.img) {
+                                Image(uiImage: img).interpolation(.none)
+                                    .resizable().scaledToFit()
+                                    .frame(width: min(CGFloat(s.w) * 1.4, 52), height: min(CGFloat(s.h) * 1.4, 40))
+                            }
+                            Text(s.code).font(.system(size: 8)).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 56)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding()
+        }
     }
 }
