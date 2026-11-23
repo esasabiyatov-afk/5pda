@@ -33,3 +33,5 @@
 8 wait 2
 9 tap 58 141
 9 wait 2
+10 tap 401 1433
+10 wait 3
