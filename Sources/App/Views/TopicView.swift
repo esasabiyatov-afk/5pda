@@ -25,6 +25,8 @@ struct TopicView: View {
     @State private var reputationTarget: Post?
     @State private var showSearch = false
     @AppStorage("collapse_polls") private var collapsePolls = false
+    @State private var complaintPost: Post?
+    @State private var complaintText = ""
 
     init(route: TopicRoute) {
         self.route = route
@@ -143,6 +145,22 @@ struct TopicView: View {
                 .environmentObject(client)
         }
         .alert(item: $alert) { Alert(title: Text($0.title), message: Text($0.message)) }
+        .alert("Жалоба на пост", isPresented: Binding(get: { complaintPost != nil }, set: { if !$0 { complaintPost = nil } })) {
+            TextField("Опишите нарушение", text: $complaintText)
+            Button("Отправить") {
+                if let p = complaintPost {
+                    let text = complaintText
+                    Task {
+                        do {
+                            try await PDAAPI.complain(.post, id: p.id, text: text)
+                            alert = ActionAlert(title: "Готово", message: "Жалоба отправлена")
+                        } catch { alert = ActionAlert(title: "Ошибка", message: error.localizedDescription) }
+                    }
+                }
+                complaintText = ""
+            }
+            Button("Отмена", role: .cancel) { complaintText = "" }
+        }
         .task { if page == nil { await initialLoad() } }
     }
 
@@ -239,6 +257,12 @@ struct TopicView: View {
         }
         Button { router.push(ProfileRoute(id: post.authorId, nick: post.authorName)) } label: {
             Label("Профиль \(post.authorName)", systemImage: "person")
+        }
+        Button { router.push(MoreRoute.userPosts(post.authorId, post.authorName)) } label: {
+            Label("Поиск постов \(post.authorName)", systemImage: "magnifyingglass")
+        }
+        if client.isLoggedIn {
+            Button { complaintPost = post } label: { Label("Жалоба", systemImage: "exclamationmark.bubble") }
         }
         Button {
             UIPasteboard.general.string = PDAConfig.siteURL.absoluteString + "forum/index.php?showtopic=\(topicId)&view=findpost&p=\(post.id)"

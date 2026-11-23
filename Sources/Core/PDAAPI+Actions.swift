@@ -481,9 +481,9 @@ extension PDAAPI {
         let cancelled: Bool
     }
 
-    /// История репутации (`mr`): [id пользователя, режим (0 — полученная, 1 — выставленная), 0, 200].
+    /// История репутации (`mr`): [id пользователя, режим (2 — полученная, 3 — выставленная), 0, 200].
     static func reputationHistory(userId: Int, given: Bool = false) async throws -> [ReputationEntry] {
-        let data = try await PDAClient.shared.call("mr", [.int(userId), .int(given ? 1 : 0), 0, 200])
+        let data = try await PDAClient.shared.call("mr", [.int(userId), .int(given ? 3 : 2), 0, 200])
         return data.array(1).map { r in
             ReputationEntry(id: r.int(0), date: Date(timeIntervalSince1970: TimeInterval(r.int(1))),
                             positive: r.int(2) > 0, fromId: r.int(3), fromNick: HTMLEntities.decode(r.string(4)),
@@ -498,5 +498,16 @@ extension PDAAPI {
         let data = try await PDAClient.shared.call("rc", [.int(flags), .array([]), .array([]), .array([.int(userId)]),
                                                           "", .int(offset), .int(postsPerPage)])
         return (data.int(0), parseSearchItems(data))
+    }
+
+    enum ComplaintTarget: Int { case post = 0, siteComment = 1, reputation = 2 }
+
+    /// Жалоба (`ta`): [тип (0 — пост, 1 — комментарий на сайте, 2 — репутация), id, текст].
+    static func complain(_ target: ComplaintTarget, id: Int, text: String) async throws {
+        do {
+            _ = try await PDAClient.shared.call("ta", [.int(target.rawValue), .int(id), .string(text)])
+        } catch let e as PDAServerError where e.code == 4 {
+            throw PDAMessageError(message: "Слишком короткая жалоба")
+        }
     }
 }

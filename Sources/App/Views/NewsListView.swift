@@ -71,7 +71,7 @@ struct NewsListView: View {
         error = nil
         reachedEnd = false
         do {
-            items = try await PDAAPI.news(category: category?.id ?? 0)
+            items = try await PDAAPI.news(category: category?.tid ?? 0)
             reachedEnd = items.count < 30
         } catch {
             self.error = error.localizedDescription
@@ -83,7 +83,7 @@ struct NewsListView: View {
         loading = true
         defer { loading = false }
         do {
-            let more = try await PDAAPI.news(offset: items.count, category: category?.id ?? 0)
+            let more = try await PDAAPI.news(offset: items.count, category: category?.tid ?? 0)
             let known = Set(items.map(\.id))
             items += more.filter { !known.contains($0.id) }
             reachedEnd = more.count < 30
