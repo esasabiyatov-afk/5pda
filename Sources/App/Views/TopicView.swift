@@ -1,25 +1,39 @@
 import SwiftUI
 import UIKit
 
-/// Тема: посты постранично, ответы, цитаты, правка, оценки, опрос.
+/// Тема: посты с бесконечной прокруткой, переход по страницам, ответы, цитаты,
+/// правка, оценки, опрос.
 struct TopicView: View {
     let route: TopicRoute
     @EnvironmentObject private var client: PDAClient
+    @EnvironmentObject private var router: Router
+    @State private var topicId: Int
     @State private var page: TopicPage?
-    @State private var offset = 0
+    /// Загруженные посты: с позиции `startOffset` до `endOffset` (не включая).
+    @State private var posts: [Post] = []
+    @State private var startOffset = 0
+    @State private var endOffset = 0
+    @State private var visibleIndex = 0
     @State private var highlightPost: Int?
+    @State private var scrollTarget: Int?
     @State private var error: String?
     @State private var loading = false
+    @State private var loadingMore = false
+    @State private var loadingPrev = false
     @State private var composer: ComposerState?
     @State private var alert: ActionAlert?
     @State private var reputationTarget: Post?
     @State private var showSearch = false
 
-    private var pageCount: Int {
-        guard let total = page?.totalPosts, total > 0 else { return 1 }
-        return (total + PDAAPI.postsPerPage - 1) / PDAAPI.postsPerPage
+    init(route: TopicRoute) {
+        self.route = route
+        _topicId = State(initialValue: route.id)
     }
-    private var currentPage: Int { offset / PDAAPI.postsPerPage + 1 }
+
+    private var perPage: Int { PDAAPI.postsPerPage }
+    private var total: Int { max(page?.totalPosts ?? 0, endOffset) }
+    private var pageCount: Int { max(1, (total + perPage - 1) / perPage) }
+    private var currentPage: Int { min(pageCount, visibleIndex / perPage + 1) }
 
     var body: some View {
         Group {
@@ -28,34 +42,67 @@ struct TopicView: View {
             } else if let page = page {
                 ScrollViewReader { proxy in
                     List {
-                        if currentPage == 1, !page.description.isEmpty {
-                            Text(page.description).font(.footnote).foregroundStyle(.secondary)
-                        }
-                        if let poll = page.poll, currentPage == 1 {
-                            PollView(poll: poll, topicId: page.id, canVote: page.flags & 4 == 0) {
-                                Task { await load(offset) }
+                        if startOffset > 0 {
+                            Button {
+                                Task { await loadPrevious(proxy: proxy) }
+                            } label: {
+                                HStack {
+                                    Spacer()
+                                    if loadingPrev { ProgressView() } else {
+                                        Label("Предыдущие посты", systemImage: "arrow.up")
+                                    }
+                                    Spacer()
+                                }
+                            }
+                            .disabled(loadingPrev)
+                        } else {
+                            if !page.description.isEmpty {
+                                Text(page.description).font(.footnote).foregroundStyle(.secondary)
+                            }
+                            if let poll = page.poll {
+                                PollView(poll: poll, topicId: topicId, canVote: page.flags & 4 == 0) {
+                                    Task { await load(startOffset) }
+                                }
                             }
                         }
-                        ForEach(page.posts) { post in
-                            PostView(post: post, highlighted: post.id == highlightPost)
+                        ForEach(Array(posts.enumerated()), id: \.element.id) { index, post in
+                            PostView(post: post, number: startOffset + index + 1, highlighted: post.id == highlightPost)
                                 .id(post.id)
                                 .contextMenu { postMenu(post, page: page) }
+                                .onAppear {
+                                    visibleIndex = startOffset + index
+                                    if index >= posts.count - 3 { Task { await loadMore() } }
+                                }
+                        }
+                        if endOffset < total {
+                            HStack {
+                                Spacer()
+                                if loadingMore { ProgressView() } else {
+                                    Button("Загрузить ещё") { Task { await loadMore() } }
+                                }
+                                Spacer()
+                            }
+                            .onAppear { Task { await loadMore() } }
+                        } else if !posts.isEmpty {
+                            Text("Конец темы").font(.caption).foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity)
+                                .listRowSeparator(.hidden)
                         }
                     }
                     .listStyle(.plain)
-                    .refreshable { await load(offset) }
-                    .onChange(of: page.posts.first?.id) { _ in
-                        if let target = highlightPost, page.posts.contains(where: { $0.id == target }) {
+                    .refreshable { await refresh() }
+                    .onChange(of: scrollTarget) { target in
+                        guard let target = target else { return }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                             proxy.scrollTo(target, anchor: .top)
-                        } else if let first = page.posts.first {
-                            proxy.scrollTo(first.id, anchor: .top)
+                            scrollTarget = nil
                         }
                     }
                     .onAppear {
                         if let target = highlightPost { proxy.scrollTo(target, anchor: .top) }
                     }
                 }
-                .overlay { if loading { ProgressView() } }
+                .overlay { if loading { ProgressView().padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10)) } }
             } else {
                 ProgressView()
             }
@@ -76,7 +123,8 @@ struct TopicView: View {
             ReputationSheet(userId: post.authorId, nick: post.authorName, postId: post.id) { reputationTarget = nil }
         }
         .sheet(isPresented: $showSearch) {
-            NavigationStack { SearchView(topicId: route.id, topicTitle: page?.title ?? route.title).pdaDestinations() }
+            RoutedStack { SearchView(topicId: topicId, topicTitle: page?.title ?? route.title) }
+                .environmentObject(client)
         }
         .alert(item: $alert) { Alert(title: Text($0.title), message: Text($0.message)) }
         .task { if page == nil { await initialLoad() } }
@@ -88,11 +136,11 @@ struct TopicView: View {
         Menu {
             if let page = page {
                 if page.canReply, client.isLoggedIn {
-                    Button { composer = ComposerState(topicId: page.id, title: "Ответ: \(page.title)") } label: {
+                    Button { composer = ComposerState(topicId: topicId, title: "Ответ: \(page.title)") } label: {
                         Label("Написать пост", systemImage: "square.and.pencil")
                     }
                 }
-                Button { Task { await load(offset) } } label: { Label("Обновить", systemImage: "arrow.clockwise") }
+                Button { Task { await refresh() } } label: { Label("Обновить", systemImage: "arrow.clockwise") }
                 if client.isLoggedIn {
                     Button { Task { await jump(.unread) } } label: { Label("К непрочитанному", systemImage: "eye") }
                     Button {
@@ -106,7 +154,7 @@ struct TopicView: View {
                 Button {
                     UIPasteboard.general.string = topicURL.absoluteString
                 } label: { Label("Копировать ссылку", systemImage: "link") }
-                Link(destination: topicURL) { Label("Открыть в браузере", systemImage: "safari") }
+                BrowserLink(destination: topicURL) { Label("Открыть в браузере", systemImage: "safari") }
             }
         } label: {
             Image(systemName: "ellipsis.circle")
@@ -117,24 +165,24 @@ struct TopicView: View {
     private var pager: some View {
         Button { Task { await load(0) } } label: { Image(systemName: "chevron.backward.2") }
             .disabled(currentPage <= 1)
-        Button { Task { await load(offset - PDAAPI.postsPerPage) } } label: { Image(systemName: "chevron.backward") }
+        Button { Task { await load((currentPage - 2) * perPage) } } label: { Image(systemName: "chevron.backward") }
             .disabled(currentPage <= 1)
         Spacer()
         Menu("\(currentPage) / \(pageCount)") {
             ForEach(pageChoices, id: \.self) { p in
-                Button("Страница \(p)") { Task { await load((p - 1) * PDAAPI.postsPerPage) } }
+                Button("Страница \(p)") { Task { await load((p - 1) * perPage) } }
             }
         }
         .font(.footnote.monospacedDigit())
         Spacer()
         if page?.canReply == true, client.isLoggedIn {
-            Button { if let p = page { composer = ComposerState(topicId: p.id, title: "Ответ: \(p.title)") } } label: {
+            Button { if let p = page { composer = ComposerState(topicId: topicId, title: "Ответ: \(p.title)") } } label: {
                 Image(systemName: "square.and.pencil")
             }
         }
-        Button { Task { await load(offset + PDAAPI.postsPerPage) } } label: { Image(systemName: "chevron.forward") }
+        Button { Task { await load(currentPage * perPage) } } label: { Image(systemName: "chevron.forward") }
             .disabled(currentPage >= pageCount)
-        Button { Task { await load((pageCount - 1) * PDAAPI.postsPerPage) } } label: { Image(systemName: "chevron.forward.2") }
+        Button { Task { await load((pageCount - 1) * perPage) } } label: { Image(systemName: "chevron.forward.2") }
             .disabled(currentPage >= pageCount)
     }
 
@@ -151,18 +199,18 @@ struct TopicView: View {
     private func postMenu(_ post: Post, page: TopicPage) -> some View {
         if page.canReply, client.isLoggedIn {
             Button {
-                composer = ComposerState(topicId: page.id, title: "Ответ: \(page.title)",
+                composer = ComposerState(topicId: topicId, title: "Ответ: \(page.title)",
                                          text: "[SNAPBACK]\(post.id)[/SNAPBACK] [B]\(post.authorName)[/B], ")
             } label: { Label("Ответить", systemImage: "arrowshape.turn.up.left") }
             Button {
                 let date = Self.quoteDate.string(from: post.date)
-                composer = ComposerState(topicId: page.id, title: "Ответ: \(page.title)",
+                composer = ComposerState(topicId: topicId, title: "Ответ: \(page.title)",
                                          text: "[QUOTE name=\"\(post.authorName)\" date=\"\(date)\" post=\(post.id)]\(post.bodyBB)[/QUOTE]\n")
             } label: { Label("Цитировать", systemImage: "quote.bubble") }
         }
         if post.canEdit {
             Button {
-                composer = ComposerState(topicId: page.id, postId: post.id, title: "Редактирование поста",
+                composer = ComposerState(topicId: topicId, postId: post.id, title: "Редактирование поста",
                                          text: post.bodyBB, editReason: post.editReason)
             } label: { Label("Редактировать", systemImage: "pencil") }
         }
@@ -173,11 +221,11 @@ struct TopicView: View {
         if client.isLoggedIn, post.authorId != client.memberId {
             Button { reputationTarget = post } label: { Label("Репутация автора", systemImage: "plusminus") }
         }
-        NavigationLink(value: ProfileRoute(id: post.authorId, nick: post.authorName)) {
+        Button { router.push(ProfileRoute(id: post.authorId, nick: post.authorName)) } label: {
             Label("Профиль \(post.authorName)", systemImage: "person")
         }
         Button {
-            UIPasteboard.general.string = PDAConfig.siteURL.absoluteString + "forum/index.php?showtopic=\(page.id)&view=findpost&p=\(post.id)"
+            UIPasteboard.general.string = PDAConfig.siteURL.absoluteString + "forum/index.php?showtopic=\(topicId)&view=findpost&p=\(post.id)"
         } label: { Label("Копировать ссылку", systemImage: "link") }
         Button {
             UIPasteboard.general.string = BBParser.plainText(post.bodyBB)
@@ -192,7 +240,7 @@ struct TopicView: View {
     }()
 
     private var topicURL: URL {
-        URL(string: PDAConfig.siteURL.absoluteString + "forum/index.php?showtopic=\(route.id)&st=\(offset)")!
+        URL(string: PDAConfig.siteURL.absoluteString + "forum/index.php?showtopic=\(topicId)&st=\((currentPage - 1) * perPage)")!
     }
 
     // MARK: - Загрузка
@@ -213,12 +261,13 @@ struct TopicView: View {
             do {
                 let mode: Int, id: Int
                 switch jump {
-                case .unread: (mode, id) = (1, route.id)
-                case .last: (mode, id) = (2, route.id)
+                case .unread: (mode, id) = (1, topicId)
+                case .last: (mode, id) = (2, topicId)
                 case .post(let p): (mode, id) = (3, p)
-                default: (mode, id) = (1, route.id)
+                default: (mode, id) = (1, topicId)
                 }
                 let target = try await PDAAPI.findPost(mode: mode, id: id)
+                if target.topicId > 0 { topicId = target.topicId }
                 highlightPost = target.postId
                 await load(target.offset, keepLoading: true)
             } catch {
@@ -227,31 +276,84 @@ struct TopicView: View {
         }
     }
 
+    /// Загружает страницу с позиции `newOffset`, заменяя показанные посты.
     private func load(_ newOffset: Int, keepLoading: Bool = false) async {
         if !keepLoading { loading = true }
         defer { if !keepLoading { loading = false } }
         error = nil
+        let start = max(0, (newOffset / perPage) * perPage)
         do {
-            let p = try await PDAAPI.topic(id: route.id, offset: max(0, newOffset))
+            let p = try await PDAAPI.topic(id: topicId, offset: start)
             page = p
-            offset = max(0, newOffset)
+            posts = p.posts
+            startOffset = start
+            endOffset = start + p.posts.count
+            visibleIndex = start
+            let target = highlightPost.flatMap { h in p.posts.contains { $0.id == h } ? h : nil } ?? p.posts.first?.id
+            scrollTarget = target
         } catch {
             self.error = error.localizedDescription
             if page != nil { alert = ActionAlert(title: "Ошибка", message: error.localizedDescription) }
         }
     }
 
+    /// Подгружает следующую страницу в конец списка.
+    private func loadMore() async {
+        guard !loadingMore, !loading, page != nil, endOffset < total else { return }
+        loadingMore = true
+        defer { loadingMore = false }
+        do {
+            let p = try await PDAAPI.topic(id: topicId, offset: endOffset)
+            let known = Set(posts.map(\.id))
+            let add = p.posts.filter { !known.contains($0.id) }
+            page = p
+            if add.isEmpty {
+                endOffset = max(endOffset, p.totalPosts)
+            } else {
+                posts += add
+                endOffset += p.posts.count
+            }
+        } catch {
+            alert = ActionAlert(title: "Ошибка", message: error.localizedDescription)
+        }
+    }
+
+    /// Подгружает предыдущую страницу в начало списка, сохраняя позицию.
+    private func loadPrevious(proxy: ScrollViewProxy) async {
+        guard !loadingPrev, startOffset > 0 else { return }
+        loadingPrev = true
+        defer { loadingPrev = false }
+        let start = max(0, startOffset - perPage)
+        do {
+            let p = try await PDAAPI.topic(id: topicId, offset: start)
+            let known = Set(posts.map(\.id))
+            let add = p.posts.filter { !known.contains($0.id) }
+            let anchor = posts.first?.id
+            page = p
+            posts = add + posts
+            startOffset = start
+            if let anchor = anchor { scrollTarget = anchor }
+        } catch {
+            alert = ActionAlert(title: "Ошибка", message: error.localizedDescription)
+        }
+    }
+
+    /// Обновляет текущую страницу.
+    private func refresh() async {
+        await load((currentPage - 1) * perPage)
+    }
+
     private func afterSend(_ sent: PDAAPI.SentPost?) async {
-        guard let sent = sent else { await load(offset); return }
+        guard let sent = sent else { await refresh(); return }
         highlightPost = sent.postId
-        await load((sent.index / PDAAPI.postsPerPage) * PDAAPI.postsPerPage)
+        await load(sent.index)
     }
 
     private func rate(_ post: Post, up: Bool) async {
         do {
             try await PDAAPI.ratePost(post.id, up: up)
             alert = ActionAlert(title: "Готово", message: "Голос засчитан")
-            await load(offset)
+            await refresh()
         } catch {
             alert = ActionAlert(title: "Ошибка", message: error.localizedDescription)
         }
@@ -259,8 +361,8 @@ struct TopicView: View {
 
     private func toggleSubscription(_ page: TopicPage) async {
         do {
-            try await PDAAPI.setTopicSubscribed(page.id, !page.isSubscribed)
-            await load(offset)
+            try await PDAAPI.setTopicSubscribed(topicId, !page.isSubscribed)
+            self.page = try await PDAAPI.topic(id: topicId, offset: startOffset)
         } catch {
             alert = ActionAlert(title: "Ошибка", message: error.localizedDescription)
         }
@@ -271,16 +373,13 @@ struct TopicView: View {
 
 struct PostView: View {
     let post: Post
+    var number: Int = 0
     var highlighted = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                AsyncImage(url: PDAAPI.absoluteURL(post.avatar)) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    Image(systemName: "person.crop.circle.fill").resizable().foregroundStyle(.secondary)
-                }
+                RemoteImage(avatar: PDAAPI.absoluteURL(post.avatar))
                 .frame(width: 32, height: 32)
                 .clipShape(Circle())
                 VStack(alignment: .leading) {
@@ -288,6 +387,9 @@ struct PostView: View {
                     Text(post.date.pdaFormatted).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
+                if number > 0 {
+                    Text("#\(number)").font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                }
                 if post.showsRating {
                     Text(post.ratingValue > 0 ? "+\(post.ratingValue)" : "\(post.ratingValue)")
                         .font(.caption.bold())

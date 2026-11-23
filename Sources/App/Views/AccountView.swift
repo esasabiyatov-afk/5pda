@@ -18,7 +18,7 @@ struct AccountView: View {
                     Spacer()
                     Text(statusText).foregroundStyle(.secondary)
                 }
-                NavigationLink("Журнал соединения") { DebugConsoleView() }
+                NavigationLink("Журнал соединения", value: MoreRoute.log)
             }
 
             if client.isLoggedIn {
@@ -58,7 +58,7 @@ struct AccountView: View {
                     if let error = error { Text(error).foregroundStyle(.red) }
                 }
                 Section {
-                    Link("Регистрация на сайте", destination: client.siteURL.appendingPathComponent("forum/index.php").appending(queryItems: [URLQueryItem(name: "act", value: "auth"), URLQueryItem(name: "action", value: "registration")]))
+                    BrowserLink("Регистрация на сайте", destination: client.siteURL.appendingPathComponent("forum/index.php").appending(queryItems: [URLQueryItem(name: "act", value: "auth"), URLQueryItem(name: "action", value: "registration")]))
                 }
             }
 

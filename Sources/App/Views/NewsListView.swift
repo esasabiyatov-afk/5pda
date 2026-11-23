@@ -63,9 +63,7 @@ struct NewsRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            AsyncImage(url: item.imageURL) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
+            RemoteImage(url: item.imageURL, contentMode: .fill) {
                 Color.secondary.opacity(0.15)
             }
             .frame(width: 96, height: 64)
@@ -100,9 +98,7 @@ struct NewsDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 if let url = item.imageURL {
-                    AsyncImage(url: url) { image in
-                        image.resizable().scaledToFit()
-                    } placeholder: {
+                    RemoteImage(url: url) {
                         Color.secondary.opacity(0.15).frame(height: 200)
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -160,7 +156,7 @@ struct NewsDetailView: View {
                 }
 
                 if let url = URL(string: "\(PDAConfig.siteURL.absoluteString)index.php?p=\(item.id)") {
-                    Link("Открыть статью на сайте", destination: url)
+                    BrowserLink("Открыть статью на сайте", destination: url)
                         .padding(.top, 8)
                 }
             }

@@ -3,6 +3,7 @@ import UIKit
 
 /// Список собеседников и диалогов QMS.
 struct QMSListView: View {
+    @EnvironmentObject private var router: Router
     @State private var contacts: [QMSContact] = []
     @State private var error: String?
     @State private var loaded = false
@@ -44,9 +45,7 @@ struct QMSListView: View {
                             } header: {
                                 NavigationLink(value: ProfileRoute(id: c.id, nick: c.nick)) {
                                     HStack(spacing: 8) {
-                                        AsyncImage(url: PDAAPI.absoluteURL(c.avatar)) { $0.resizable().scaledToFill() } placeholder: {
-                                            Image(systemName: "person.crop.circle.fill").resizable().foregroundStyle(.secondary)
-                                        }
+                                        RemoteImage(avatar: PDAAPI.absoluteURL(c.avatar))
                                         .frame(width: 24, height: 24).clipShape(Circle())
                                         Text(c.nick).font(.subheadline.bold()).textCase(nil)
                                         if Date().timeIntervalSince(c.lastSeen) < 900 {
@@ -72,7 +71,9 @@ struct QMSListView: View {
             }
         }
         .navigationTitle("QMS")
-        .sheet(isPresented: $newDialog) { NewQMSDialogSheet(userId: nil, nick: nil) { newDialog = false } }
+        .sheet(isPresented: $newDialog) {
+            NewQMSDialogSheet(userId: nil, nick: nil, onDone: { newDialog = false }, onCreated: { router.push($0) })
+        }
         .alert(item: $alert) { Alert(title: Text($0.title), message: Text($0.message)) }
     }
 
@@ -222,12 +223,12 @@ struct NewQMSDialogSheet: View {
     let userId: Int?
     let nick: String?
     let onDone: () -> Void
+    var onCreated: (QMSDialogRoute) -> Void = { _ in }
     @State private var userIdText = ""
     @State private var title = ""
     @State private var message = ""
     @State private var sending = false
     @State private var error: String?
-    @State private var created: Int?
 
     var body: some View {
         NavigationStack {
@@ -250,9 +251,6 @@ struct NewQMSDialogSheet: View {
                         .disabled(sending || title.isEmpty || message.isEmpty || (userId == nil && Int(userIdText) == nil))
                 }
             }
-            .navigationDestination(isPresented: Binding(get: { created != nil }, set: { if !$0 { created = nil } })) {
-                if let id = created { QMSDialogView(route: QMSDialogRoute(id: id, title: title)) }
-            }
         }
     }
 
@@ -261,7 +259,9 @@ struct NewQMSDialogSheet: View {
         sending = true
         defer { sending = false }
         do {
-            created = try await PDAAPI.qmsCreate(userId: uid, title: title, text: message)
+            let id = try await PDAAPI.qmsCreate(userId: uid, title: title, text: message)
+            onDone()
+            onCreated(QMSDialogRoute(id: id, title: title))
         } catch {
             self.error = "Ошибка при создании диалога"
         }

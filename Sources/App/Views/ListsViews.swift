@@ -12,7 +12,7 @@ struct LoginRequired<Content: View>: View {
             VStack(spacing: 12) {
                 Image(systemName: "person.crop.circle.badge.questionmark").font(.largeTitle).foregroundStyle(.secondary)
                 Text("Нужно войти в аккаунт").foregroundStyle(.secondary)
-                NavigationLink("Войти") { AccountView() }
+                NavigationLink("Войти", value: MoreRoute.account)
                     .buttonStyle(.borderedProminent)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -68,6 +68,7 @@ struct ForumView: View {
     @State private var topics: [TopicSummary] = []
     @State private var error: String?
     @State private var loadingMore = false
+    @State private var exhausted = false
 
     var body: some View {
         Group {
@@ -91,9 +92,17 @@ struct ForumView: View {
                     Section("Темы") {
                         ForEach(topics.filter { !$0.isPinned }) { t in
                             TopicRow(topic: t)
-                                .onAppear { if t.id == topics.last?.id { Task { await loadMore() } } }
                         }
-                        if loadingMore { ProgressView().frame(maxWidth: .infinity) }
+                        if topics.count < page.totalTopics, !exhausted {
+                            HStack {
+                                Spacer()
+                                if loadingMore { ProgressView() } else {
+                                    Button("Загрузить ещё") { Task { await loadMore() } }
+                                }
+                                Spacer()
+                            }
+                            .onAppear { Task { await loadMore() } }
+                        }
                     }
                 }
                 .refreshable { await reload() }
@@ -115,7 +124,7 @@ struct ForumView: View {
                     Button {
                         Task { try? await PDAAPI.markRead(forum: route.id); await reload() }
                     } label: { Label("Отметить прочитанным", systemImage: "eye") }
-                    Link(destination: URL(string: PDAConfig.siteURL.absoluteString + "forum/index.php?showforum=\(route.id)")!) {
+                    BrowserLink(destination: URL(string: PDAConfig.siteURL.absoluteString + "forum/index.php?showforum=\(route.id)")!) {
                         Label("Открыть в браузере", systemImage: "safari")
                     }
                 } label: { Image(systemName: "ellipsis.circle") }
@@ -130,18 +139,25 @@ struct ForumView: View {
             let p = try await PDAAPI.forum(id: route.id)
             page = p
             topics = p.topics
+            exhausted = false
         } catch {
             self.error = error.localizedDescription
         }
     }
 
     private func loadMore() async {
-        guard let page = page, !loadingMore, topics.count < page.totalTopics else { return }
+        guard let page = page, !loadingMore, !exhausted, topics.count < page.totalTopics else { return }
         loadingMore = true
         defer { loadingMore = false }
         if let more = try? await PDAAPI.forum(id: route.id, offset: topics.count) {
             let known = Set(topics.map(\.id))
-            topics += more.topics.filter { !known.contains($0.id) }
+            let add = more.topics.filter { !known.contains($0.id) }
+            if add.isEmpty {
+                // Сервер больше ничего не отдаёт — не зацикливаемся.
+                exhausted = true
+            } else {
+                topics += add
+            }
         }
     }
 }

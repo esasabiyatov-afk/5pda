@@ -115,8 +115,15 @@ struct BBParser {
                 case "*":
                     append("\n• "); continue
                 case "snapback":
-                    _ = Self.collectText(&tokens, until: "snapback")
-                    append("↩ ")
+                    let pid = Self.collectText(&tokens, until: "snapback").trimmingCharacters(in: .whitespaces)
+                    if let id = Int(pid) {
+                        var a = AttributedString("↩ ")
+                        a.link = URL(string: PDAConfig.siteURL.absoluteString + "forum/index.php?act=findpost&pid=\(id)")
+                        a.foregroundColor = .accentColor
+                        current += a
+                    } else {
+                        append("↩ ")
+                    }
                     continue
                 case "na", "seporator", "mergetime", "anchor", "cur":
                     if name == "mergetime" { append("\n") }

@@ -23,6 +23,15 @@ extension View {
             .navigationDestination(for: QMSDialogRoute.self) { QMSDialogView(route: $0) }
             .navigationDestination(for: NewsItem.self) { NewsDetailView(item: $0) }
             .navigationDestination(for: ArticleRoute.self) { ArticleLoaderView(id: $0.id) }
+            .navigationDestination(for: MoreRoute.self) { route in
+                switch route {
+                case .account: AccountView()
+                case .mentions: MentionsView()
+                case .history: HistoryView()
+                case .search: SearchView()
+                case .log: DebugConsoleView()
+                }
+            }
     }
 }
 

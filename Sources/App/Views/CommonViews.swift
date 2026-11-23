@@ -21,7 +21,7 @@ struct ErrorView: View {
                 .foregroundStyle(.secondary)
             Button("Повторить", action: retry)
                 .buttonStyle(.borderedProminent)
-            NavigationLink("Журнал соединения") { DebugConsoleView() }
+            NavigationLink("Журнал соединения", value: MoreRoute.log)
                 .font(.footnote)
         }
         .padding()
@@ -58,22 +58,9 @@ struct BBBlockView: View {
         switch block {
         case .text(let text):
             Text(text)
-                .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .image(let url):
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().scaledToFit()
-                case .failure:
-                    Label("Не удалось загрузить изображение", systemImage: "photo")
-                        .font(.footnote).foregroundStyle(.secondary)
-                default:
-                    ProgressView().frame(maxWidth: .infinity, minHeight: 80)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: 400)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            PostImage(url: url)
         case .quote(let title, let blocks):
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).font(.caption.bold()).foregroundStyle(.secondary)

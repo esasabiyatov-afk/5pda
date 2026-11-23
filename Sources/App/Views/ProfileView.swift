@@ -3,6 +3,7 @@ import SwiftUI
 struct ProfileView: View {
     let route: ProfileRoute
     @EnvironmentObject private var client: PDAClient
+    @EnvironmentObject private var router: Router
     @State private var profile: MemberProfile?
     @State private var error: String?
     @State private var newDialog = false
@@ -14,9 +15,7 @@ struct ProfileView: View {
                 List {
                     Section {
                         HStack(spacing: 14) {
-                            AsyncImage(url: PDAAPI.absoluteURL(p.avatar)) { $0.resizable().scaledToFill() } placeholder: {
-                                Image(systemName: "person.crop.circle.fill").resizable().foregroundStyle(.secondary)
-                            }
+                            RemoteImage(avatar: PDAAPI.absoluteURL(p.avatar))
                             .frame(width: 72, height: 72).clipShape(Circle())
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(p.nick).font(.title3.bold())
@@ -38,7 +37,7 @@ struct ProfileView: View {
                         Section("Устройства") {
                             ForEach(Array(p.devices.enumerated()), id: \.offset) { _, d in
                                 if let url = URL(string: d.link), !d.link.isEmpty {
-                                    Link(destination: url) { Text(d.name).fontWeight(d.main ? .bold : .regular) }
+                                    BrowserLink(destination: url) { Text(d.name).fontWeight(d.main ? .bold : .regular) }
                                 } else {
                                     Text(d.name).fontWeight(d.main ? .bold : .regular)
                                 }
@@ -55,7 +54,7 @@ struct ProfileView: View {
                         }
                     }
                     Section {
-                        Link(destination: URL(string: PDAConfig.siteURL.absoluteString + "forum/index.php?showuser=\(p.id)")!) {
+                        BrowserLink(destination: URL(string: PDAConfig.siteURL.absoluteString + "forum/index.php?showuser=\(p.id)")!) {
                             Label("Открыть на сайте", systemImage: "safari")
                         }
                     }
@@ -69,7 +68,8 @@ struct ProfileView: View {
         .navigationTitle(profile?.nick ?? route.nick)
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $newDialog) {
-            NewQMSDialogSheet(userId: route.id, nick: profile?.nick ?? route.nick) { newDialog = false }
+            NewQMSDialogSheet(userId: route.id, nick: profile?.nick ?? route.nick,
+                              onDone: { newDialog = false }, onCreated: { router.push($0) })
         }
         .sheet(isPresented: $reputation) {
             ReputationSheet(userId: route.id, nick: profile?.nick ?? route.nick, postId: 0) {
@@ -93,7 +93,7 @@ struct MoreView: View {
     var body: some View {
         List {
             Section {
-                NavigationLink { AccountView() } label: {
+                NavigationLink(value: MoreRoute.account) {
                     Label(client.isLoggedIn ? client.memberName : "Войти", systemImage: "person.crop.circle")
                 }
                 if client.isLoggedIn {
@@ -103,12 +103,12 @@ struct MoreView: View {
                 }
             }
             Section {
-                NavigationLink { MentionsView() } label: { Label("Упоминания", systemImage: "at") }
-                NavigationLink { HistoryView() } label: { Label("История", systemImage: "clock") }
-                NavigationLink { SearchView() } label: { Label("Поиск", systemImage: "magnifyingglass") }
+                NavigationLink(value: MoreRoute.mentions) { Label("Упоминания", systemImage: "at") }
+                NavigationLink(value: MoreRoute.history) { Label("История", systemImage: "clock") }
+                NavigationLink(value: MoreRoute.search) { Label("Поиск", systemImage: "magnifyingglass") }
             }
             Section {
-                NavigationLink { DebugConsoleView() } label: { Label("Журнал соединения", systemImage: "terminal") }
+                NavigationLink(value: MoreRoute.log) { Label("Журнал соединения", systemImage: "terminal") }
             }
         }
         .navigationTitle("Ещё")
