@@ -43,7 +43,7 @@ source = {
     "description": "Источник обновлений 5PDA — неофициального клиента форума 4PDA.",
     "iconURL": icon,
     "website": f"https://github.com/{repo}",
-    "tintColor": "1E6EDC",
+    "tintColor": "4A5BE8",
     "featuredApps": [bundle_id],
     "apps": [
         {
@@ -53,7 +53,7 @@ source = {
             "subtitle": "Неофициальный клиент 4PDA",
             "localizedDescription": "Новости, форум, темы и вход в аккаунт 4PDA. Работает по протоколу официального Android-клиента.",
             "iconURL": icon,
-            "tintColor": "1E6EDC",
+            "tintColor": "4A5BE8",
             "category": "social",
             "screenshotURLs": [],
             "versions": [new_version] + old_versions[:19],
