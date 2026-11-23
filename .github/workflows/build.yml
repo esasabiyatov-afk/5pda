@@ -1,0 +1,55 @@
+name: Build IPA
+
+on:
+  push:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build unsigned IPA
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project FivePDA.xcodeproj \
+            -scheme FivePDA \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tee xcodebuild.log | grep -E '(error|warning: unre|BUILD)' || true
+          test -d build/Build/Products/Release-iphoneos/FivePDA.app
+
+      - name: Show errors
+        if: failure()
+        run: grep -E 'error:' xcodebuild.log | sort -u | head -100 || true
+
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/FivePDA.app Payload/
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Payload/FivePDA.app/Info.plist)
+          zip -qry "5PDA_${VERSION}_${GITHUB_RUN_NUMBER}.ipa" Payload
+          ls -la *.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: 5PDA-unsigned-ipa
+          path: "*.ipa"
+          if-no-files-found: error
