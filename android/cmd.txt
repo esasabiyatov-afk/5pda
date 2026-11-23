@@ -91,3 +91,9 @@
 27 wait 2
 28 long 540 1600
 28 wait 2
+29 back
+29 wait 1
+29 swipe 2 1000 700 1000 300
+29 wait 2
+29 tap 401 927
+29 wait 4
