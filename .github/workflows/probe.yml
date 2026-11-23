@@ -1,0 +1,40 @@
+name: Probe 4PDA server
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - scripts/probe.py
+      - .github/workflows/probe.yml
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run probe
+        env:
+          PDA_LOGIN: ${{ secrets.PDA_LOGIN }}
+          PDA_PASSWORD: ${{ secrets.PDA_PASSWORD }}
+        run: |
+          python3 scripts/probe.py probe || true
+          ls -la probe
+          (cd probe && zip -q ../probe.zip *.txt)
+          # Шифруем: результаты могут содержать данные аккаунта, а репозиторий публичный.
+          openssl rand -out key.bin 32
+          openssl enc -aes-256-cbc -pbkdf2 -salt -in probe.zip -out probe.zip.enc -pass file:key.bin
+          openssl pkeyutl -encrypt -pubin -inkey scripts/probe.pub -pkeyopt rsa_padding_mode:oaep -in key.bin -out probe.key.enc
+          rm -rf probe probe.zip key.bin
+      - name: Publish results
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: probe
+          name: Probe results
+          prerelease: true
+          make_latest: false
+          files: |
+            probe.zip.enc
+            probe.key.enc

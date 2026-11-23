@@ -4,6 +4,9 @@ on:
   push:
     paths-ignore:
       - "**.md"
+      - scripts/probe.py
+      - scripts/probe.pub
+      - .github/workflows/probe.yml
   workflow_dispatch:
 
 concurrency:
