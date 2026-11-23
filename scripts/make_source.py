@@ -25,7 +25,11 @@ try:
 except Exception as e:
     print("no previous source.json:", e)
 
-notes = os.environ.get("RELEASE_NOTES", "").strip() or "Новая сборка."
+raw_notes = os.environ.get("RELEASE_NOTES", "")
+notes = "\n".join(
+    line for line in raw_notes.splitlines()
+    if not line.startswith(("Co-Authored-By:", "Claude-Session:", "Signed-off-by:"))
+).strip() or "Новая сборка."
 new_version = {
     "version": version,
     "buildVersion": build,
