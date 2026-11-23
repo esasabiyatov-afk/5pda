@@ -98,6 +98,7 @@ struct BBBlockView: View {
         switch block {
         case .text(let text):
             Self.render(text)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: frameAlignment)
         case .image(let url):
             PostImage(url: url)
@@ -135,6 +136,7 @@ struct BBBlockView: View {
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .fixedSize(horizontal: false, vertical: true)
             .background(Color.secondary.opacity(0.08))
         case .spoiler(let title, let blocks):
             // Как в Android: рамка с синей полосой слева, «Спойлер: заголовок».
@@ -153,6 +155,8 @@ struct BBBlockView: View {
                         Image(systemName: expanded ? "chevron.up" : "chevron.down")
                             .font(.caption).foregroundStyle(.secondary).padding(.trailing, 8)
                     }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 if expanded {
