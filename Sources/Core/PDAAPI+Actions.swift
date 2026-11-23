@@ -591,4 +591,74 @@ extension PDAAPI {
         let d = try await PDAClient.shared.call("fn", [.int(id)])
         return (HTMLEntities.decode(d.string(0)), d.string(1))
     }
+
+    /// Поле формы создания темы (`fw`).
+    struct FormField: Identifiable {
+        let id: Int
+        let type: String        // text, editor, dropdown, checkbox_list, upload_box, …
+        let title: String
+        let description: String
+        let required: Bool
+        var text: String
+        var options: [String] = []
+        var selected = 0        // dropdown
+        var checked: Set<Int> = []  // checkbox_list
+        var attachments: [Int] = [] // upload_box
+    }
+
+    /// Форма создания темы: `fw` [форум, 0, 0] → [[[тип, название, описание, подсказка, флаги, значение, …]]].
+    static func topicForm(forumId: Int) async throws -> [FormField] {
+        let data = try await PDAClient.shared.call("fw", [.int(forumId), 0, 0])
+        return data.array(0).enumerated().map { i, f in
+            let type = f.string(0).lowercased()
+            var field = FormField(id: i, type: type, title: HTMLEntities.decode(f.string(1)),
+                                  description: HTMLEntities.decode(BBParser.plainText(f.string(2))),
+                                  required: f.int(4) & 1 != 0, text: f.string(5))
+            if type == "dropdown" || type == "checkbox_list" {
+                field.options = f.array(6).map { HTMLEntities.decode($0.stringValue ?? "") }
+            }
+            return field
+        }
+    }
+
+    private static func formValues(_ fields: [FormField]) -> PDAValue {
+        .array(fields.map { f -> PDAValue in
+            switch f.type {
+            case "text", "editor": return .string(f.text)
+            case "dropdown": return .int(f.selected + 1)
+            case "checkbox_list": return .array(f.checked.sorted().map { .int($0 + 1) })
+            case "upload_box": return .array(f.attachments.map { .int($0) })
+            default: return 0
+            }
+        })
+    }
+
+    struct FormErrors: LocalizedError {
+        let messages: [Int: String]
+        let general: String
+        var errorDescription: String? { general }
+    }
+
+    /// Отправка формы: `fw` [форум, 0, 2, [значения]] → [id новой темы].
+    static func submitTopic(forumId: Int, fields: [FormField]) async throws -> Int {
+        do {
+            return try await PDAClient.shared.call("fw", [.int(forumId), 0, 2, formValues(fields)]).int(0)
+        } catch let e as PDAServerError {
+            let payload = PDAClient.shared.lastErrorPayload
+            switch e.code {
+            case 3: throw PDAMessageError(message: "Сервер отказал в создании темы (неверный параметр)")
+            case 4: throw PDAMessageError(message: "Тема отправлена на премодерацию")
+            case 5:
+                var map: [Int: String] = [:]
+                var general = "При заполнении формы допущены ошибки"
+                for (i, v) in (payload?.array(0) ?? []).enumerated() {
+                    if let m = v.stringValue, !m.isEmpty {
+                        if i < fields.count { map[i] = m } else { general = m }
+                    }
+                }
+                throw FormErrors(messages: map, general: general)
+            default: throw e
+            }
+        }
+    }
 }

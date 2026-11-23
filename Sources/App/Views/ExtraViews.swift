@@ -301,3 +301,97 @@ struct AnnouncementView: View {
         } catch { self.error = error.localizedDescription }
     }
 }
+
+/// Создание темы по форме раздела (как Form_Wizard в Android-клиенте).
+struct CreateTopicView: View {
+    let forumId: Int
+    let forumName: String
+    let onCreated: (Int, String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var fields: [PDAAPI.FormField] = []
+    @State private var loading = true
+    @State private var sending = false
+    @State private var error: String?
+    @State private var fieldErrors: [Int: String] = [:]
+    @StateObject private var editor = BBEditorController()
+    @StateObject private var uploader = AttachmentUploader()
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if loading { ProgressView().frame(maxWidth: .infinity) }
+                if let e = error { Text(e).foregroundStyle(.red) }
+                ForEach($fields) { $f in
+                    Section {
+                        switch f.type {
+                        case "text":
+                            TextField(f.title, text: $f.text)
+                        case "editor":
+                            BBToolbar(controller: editor)
+                            BBTextView(text: $f.text, controller: editor, autoFocus: false)
+                                .frame(minHeight: 220)
+                        case "dropdown":
+                            Picker(f.title, selection: $f.selected) {
+                                ForEach(Array(f.options.enumerated()), id: \.offset) { i, o in Text(o).tag(i) }
+                            }
+                        case "checkbox_list":
+                            ForEach(Array(f.options.enumerated()), id: \.offset) { i, o in
+                                Toggle(o, isOn: Binding(get: { f.checked.contains(i) },
+                                                        set: { on in if on { f.checked.insert(i) } else { f.checked.remove(i) } }))
+                            }
+                        case "upload_box":
+                            AttachmentBar(uploader: uploader, editor: editor)
+                        default:
+                            if !f.text.isEmpty { BBContentView(f.text) }
+                        }
+                    } header: {
+                        Text(f.title + (f.required ? " *" : ""))
+                    } footer: {
+                        VStack(alignment: .leading) {
+                            if !f.description.isEmpty { Text(f.description) }
+                            if let m = fieldErrors[f.id] { Text(m).foregroundStyle(.red) }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Новая тема")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    if sending { ProgressView() } else {
+                        Button("Создать") { Task { await submit() } }.disabled(fields.isEmpty)
+                    }
+                }
+            }
+            .task { await load() }
+        }
+        .interactiveDismissDisabled(fields.contains { $0.type == "editor" && !$0.text.isEmpty })
+    }
+
+    private func load() async {
+        loading = true
+        defer { loading = false }
+        do { fields = try await PDAAPI.topicForm(forumId: forumId) } catch { self.error = error.localizedDescription }
+    }
+
+    private func submit() async {
+        sending = true
+        defer { sending = false }
+        error = nil
+        fieldErrors = [:]
+        var send = fields
+        for i in send.indices where send[i].type == "upload_box" { send[i].attachments = uploader.items.compactMap(\.id) }
+        do {
+            let id = try await PDAAPI.submitTopic(forumId: forumId, fields: send)
+            let title = send.first(where: { $0.type == "text" })?.text ?? forumName
+            dismiss()
+            onCreated(id, title)
+        } catch let e as PDAAPI.FormErrors {
+            fieldErrors = e.messages
+            error = e.general
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}

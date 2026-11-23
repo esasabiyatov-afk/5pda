@@ -94,6 +94,7 @@ struct ForumView: View {
     @State private var exhausted = false
     @AppStorage("dismissed_forum_message") private var dismissedMessage = ""
     @State private var showInfo = false
+    @State private var createTopic = false
 
     var body: some View {
         Group {
@@ -182,6 +183,7 @@ struct ForumView: View {
                         Task { try? await PDAAPI.markRead(forum: route.id); await reload() }
                     } label: { Label("Отметить прочитанным", systemImage: "eye") }
                     Button { showInfo = true } label: { Label("О форуме", systemImage: "info.circle") }
+                    Button { createTopic = true } label: { Label("Создать тему", systemImage: "square.and.pencil") }
                     Button {
                         Task { try? await PDAAPI.addBookmark(title: page.name.isEmpty ? route.name : page.name,
                                                              url: "forum/index.php?showforum=\(route.id)") }
@@ -197,6 +199,11 @@ struct ForumView: View {
         }
         .task { if page == nil { await reload() } }
         .sheet(isPresented: $showInfo) { ForumInfoSheet(forumId: route.id).environmentObject(router) }
+        .sheet(isPresented: $createTopic) {
+            CreateTopicView(forumId: route.id, forumName: route.name) { id, title in
+                router.push(TopicRoute(id: id, title: title))
+            }
+        }
     }
 
     private func reload() async {
