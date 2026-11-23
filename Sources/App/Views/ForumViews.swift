@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct ForumRoute: Hashable { let id: Int; let name: String }
-struct TopicRoute: Hashable { let id: Int; let title: String }
 
 /// Дерево форумов: категории и разделы.
 struct ForumsView: View {
@@ -10,8 +9,6 @@ struct ForumsView: View {
     var body: some View {
         content
             .navigationTitle("Форум")
-            .navigationDestination(for: ForumRoute.self) { ForumView(route: $0) }
-            .navigationDestination(for: TopicRoute.self) { TopicView(route: $0) }
             .task { if case .loading = state { await load() } }
     }
 
@@ -67,6 +64,7 @@ struct ForumsView: View {
 /// Раздел форума: подфорумы и темы.
 struct ForumView: View {
     let route: ForumRoute
+    @EnvironmentObject private var client: PDAClient
     @State private var page: ForumPage?
     @State private var topics: [TopicSummary] = []
     @State private var error: String?
@@ -106,6 +104,24 @@ struct ForumView: View {
         }
         .navigationTitle(page?.name.isEmpty == false ? page!.name : route.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let page = page, client.isLoggedIn {
+                Menu {
+                    Button {
+                        Task { try? await PDAAPI.setForumSubscribed(route.id, page.flags & 8 == 0); await reload() }
+                    } label: {
+                        Label(page.flags & 8 == 0 ? "В избранное" : "Убрать из избранного",
+                              systemImage: page.flags & 8 == 0 ? "star" : "star.slash")
+                    }
+                    Button {
+                        Task { try? await PDAAPI.markRead(forum: route.id); await reload() }
+                    } label: { Label("Отметить прочитанным", systemImage: "eye") }
+                    Link(destination: URL(string: PDAConfig.siteURL.absoluteString + "forum/index.php?showforum=\(route.id)")!) {
+                        Label("Открыть в браузере", systemImage: "safari")
+                    }
+                } label: { Image(systemName: "ellipsis.circle") }
+            }
+        }
         .task { if page == nil { await reload() } }
     }
 
@@ -135,7 +151,7 @@ struct TopicRow: View {
     let topic: TopicSummary
 
     var body: some View {
-        NavigationLink(value: TopicRoute(id: topic.id, title: topic.title)) {
+        NavigationLink(value: TopicRoute(id: topic.id, title: topic.title, jump: topic.hasUnread ? .unread : .start)) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     if topic.hasUnread {
@@ -153,95 +169,3 @@ struct TopicRow: View {
     }
 }
 
-/// Тема: посты постранично.
-struct TopicView: View {
-    let route: TopicRoute
-    @State private var page: TopicPage?
-    @State private var offset = 0
-    @State private var error: String?
-    @State private var loading = false
-
-    private var pageCount: Int {
-        guard let total = page?.totalPosts, total > 0 else { return 1 }
-        return (total + PDAAPI.postsPerPage - 1) / PDAAPI.postsPerPage
-    }
-    private var currentPage: Int { offset / PDAAPI.postsPerPage + 1 }
-
-    var body: some View {
-        Group {
-            if let error = error, page == nil {
-                ErrorView(message: error) { Task { await load(offset) } }
-            } else if let page = page {
-                ScrollViewReader { proxy in
-                    List {
-                        ForEach(page.posts) { post in
-                            PostView(post: post).id(post.id)
-                        }
-                    }
-                    .listStyle(.plain)
-                    .onChange(of: offset) { _ in
-                        if let first = page.posts.first { proxy.scrollTo(first.id, anchor: .top) }
-                    }
-                }
-                .overlay { if loading { ProgressView() } }
-            } else {
-                ProgressView()
-            }
-        }
-        .navigationTitle(page?.title ?? route.title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItemGroup(placement: .bottomBar) {
-                Button { Task { await load(0) } } label: { Image(systemName: "chevron.backward.2") }
-                    .disabled(currentPage <= 1)
-                Button { Task { await load(offset - PDAAPI.postsPerPage) } } label: { Image(systemName: "chevron.backward") }
-                    .disabled(currentPage <= 1)
-                Spacer()
-                Text("\(currentPage) / \(pageCount)").font(.footnote).monospacedDigit()
-                Spacer()
-                Button { Task { await load(offset + PDAAPI.postsPerPage) } } label: { Image(systemName: "chevron.forward") }
-                    .disabled(currentPage >= pageCount)
-                Button { Task { await load((pageCount - 1) * PDAAPI.postsPerPage) } } label: { Image(systemName: "chevron.forward.2") }
-                    .disabled(currentPage >= pageCount)
-            }
-        }
-        .task { if page == nil { await load(0) } }
-    }
-
-    private func load(_ newOffset: Int) async {
-        loading = true
-        defer { loading = false }
-        error = nil
-        do {
-            let p = try await PDAAPI.topic(id: route.id, offset: max(0, newOffset))
-            page = p
-            offset = max(0, newOffset)
-        } catch {
-            self.error = error.localizedDescription
-        }
-    }
-}
-
-struct PostView: View {
-    let post: Post
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                AsyncImage(url: PDAAPI.absoluteURL(post.avatar)) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    Image(systemName: "person.crop.circle.fill").resizable().foregroundStyle(.secondary)
-                }
-                .frame(width: 32, height: 32)
-                .clipShape(Circle())
-                VStack(alignment: .leading) {
-                    Text(post.authorName).font(.subheadline.bold())
-                    Text(post.date.pdaFormatted).font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            BBContentView(post.bodyBB, attachments: post.attachments)
-        }
-        .padding(.vertical, 6)
-    }
-}

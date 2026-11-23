@@ -8,12 +8,16 @@ struct FivePDAApp: App {
     var body: some Scene {
         WindowGroup {
             TabView {
-                NavigationStack { NewsListView() }
+                NavigationStack { NewsListView().pdaDestinations() }
                     .tabItem { Label("Новости", systemImage: "newspaper") }
-                NavigationStack { ForumsView() }
+                NavigationStack { ForumsView().pdaDestinations() }
                     .tabItem { Label("Форум", systemImage: "bubble.left.and.bubble.right") }
-                NavigationStack { AccountView() }
-                    .tabItem { Label("Аккаунт", systemImage: "person.crop.circle") }
+                NavigationStack { FavoritesView().pdaDestinations() }
+                    .tabItem { Label("Избранное", systemImage: "star") }
+                NavigationStack { QMSListView().pdaDestinations() }
+                    .tabItem { Label("QMS", systemImage: "envelope") }
+                NavigationStack { MoreView().pdaDestinations() }
+                    .tabItem { Label("Ещё", systemImage: "ellipsis.circle") }
                     .badge(updater.available == nil ? 0 : 1)
             }
             .environmentObject(client)

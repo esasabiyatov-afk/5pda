@@ -29,7 +29,6 @@ struct NewsListView: View {
             }
         }
         .navigationTitle("Новости")
-        .navigationDestination(for: NewsItem.self) { NewsDetailView(item: $0) }
         .task { if items.isEmpty { await reload() } }
     }
 

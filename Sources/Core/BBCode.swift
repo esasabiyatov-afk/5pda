@@ -36,6 +36,19 @@ struct BBParser {
 
     var attachments: [Attachment] = []
 
+    /// Текст без разметки (для копирования).
+    static func plainText(_ source: String) -> String {
+        var out = ""
+        for t in tokenize(source) {
+            switch t.kind {
+            case .text(let s): out += HTMLEntities.decode(s)
+            case .open(let n, _): if n == "*" { out += "\n• " } else if n == "break" { out += "\n" }
+            case .close: break
+            }
+        }
+        return out
+    }
+
     func parse(_ source: String) -> [BBBlock] {
         var tokens = Self.tokenize(source)
         tokens.reverse()
@@ -101,7 +114,11 @@ struct BBParser {
                     append("\n"); continue
                 case "*":
                     append("\n• "); continue
-                case "na", "seporator", "mergetime", "snapback", "anchor", "cur":
+                case "snapback":
+                    _ = Self.collectText(&tokens, until: "snapback")
+                    append("↩ ")
+                    continue
+                case "na", "seporator", "mergetime", "anchor", "cur":
                     if name == "mergetime" { append("\n") }
                     // служебные теги без закрывающей пары — пропускаем содержимое до закрытия, если оно есть
                     continue

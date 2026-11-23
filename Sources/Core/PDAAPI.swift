@@ -85,13 +85,30 @@ struct Post: Identifiable, Hashable {
     let bodyBB: String
     let avatar: String
     let attachments: [Attachment]
+    var editReason: String = ""
+    /// Поле 12: бит 1 — можно оценить, 2 — уже оценён (4 — плюс), остальное >> 3 — рейтинг.
+    var rating: Int = 0
+
+    var canEdit: Bool { flags & 128 != 0 }
+    var canDelete: Bool { flags & 256 != 0 }
+    var canRate: Bool { rating & 1 != 0 && rating & 2 == 0 }
+    var ratingValue: Int { rating >> 3 }
+    var showsRating: Bool { rating & 1 != 0 }
 }
 
 struct TopicPage {
+    let id: Int
     let title: String
     let description: String
     let totalPosts: Int
+    let flags: Int
+    let authorId: Int
     let posts: [Post]
+    let poll: Poll?
+
+    /// Флаги темы (поле 4): 8 — в избранном, 16 — закрыта, 64 — можно отвечать, 128 — можно править, 4 — закрыта для голосования.
+    var isSubscribed: Bool { flags & 8 != 0 }
+    var canReply: Bool { flags & 64 != 0 && flags & 16 == 0 }
 }
 
 // MARK: - Команды
@@ -182,26 +199,23 @@ enum PDAAPI {
     }
 
     /// Тема (`fr`): [id темы, смещение, постов на страницу, 0].
-    static func topic(id: Int, offset: Int = 0) async throws -> TopicPage {
-        let data = try await PDAClient.shared.call("fr", [.int(id), .int(offset), .int(postsPerPage), 0])
-        let posts: [Post] = data.array(12).compactMap { p in
-            guard p[8]?.stringValue != nil else { return nil }
-            let attachments = (p[11]?.arrayValue ?? []).map { a -> Attachment in
-                let isImage = a.int(1) > 0
-                // Картинка: [id, 1, url, ?, имя, ширина, высота]; файл: [id, 0, имя/url, ...]
-                return Attachment(id: a.int(0), isImage: isImage,
-                                  name: isImage ? a.string(4) : a.string(2),
-                                  url: a.string(2),
-                                  width: isImage ? a.int(5) : 0, height: isImage ? a.int(6) : 0)
+    static func topic(id: Int, offset: Int = 0, mode: Int = 0) async throws -> TopicPage {
+        let data = try await PDAClient.shared.call("fr", [.int(id), .int(offset), .int(postsPerPage), .int(mode)])
+        let posts: [Post] = data.array(12).compactMap { post(from: $0) }
+        var poll: Poll?
+        if let p = data[10], p.count > 3 {
+            let questions = p.array(3).map { q in
+                PollQuestion(text: HTMLEntities.decode(q.string(0)), multiple: q.int(1) != 0,
+                             options: q.array(2).map { HTMLEntities.decode($0.stringValue ?? "") },
+                             votes: q.array(3).map { $0.intValue ?? 0 })
             }
-            return Post(id: p.int(0), flags: p.int(1), authorId: p.int(2),
-                        authorName: HTMLEntities.decode(p.string(3)), authorGroup: p.int(4),
-                        date: date(p.int(7)), bodyBB: p.string(8), avatar: p.string(9),
-                        attachments: attachments)
+            poll = Poll(title: HTMLEntities.decode(p.string(0)), totalVotes: p.int(1), voted: p.int(2) != 0,
+                        questions: questions)
         }
-        return TopicPage(title: HTMLEntities.decode(data.string(2)),
+        return TopicPage(id: id, title: HTMLEntities.decode(data.string(2)),
                          description: HTMLEntities.decode(data.string(3)),
-                         totalPosts: data.int(11), posts: posts)
+                         totalPosts: data.int(11), flags: data.int(4), authorId: data.int(8),
+                         posts: posts, poll: poll)
     }
 }
 
