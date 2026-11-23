@@ -13,7 +13,7 @@ struct PDATimeoutError: LocalizedError {
 
 /// Клиент протокола приложения 4PDA.
 ///
-/// Запрос: `[...параметры, "<код команды из 2 букв>", <id запроса>]`.
+/// Запрос: `[<id запроса>, "<код команды из 2 букв>", ...параметры]`.
 /// Ответ:  `[<id запроса>, <код ошибки, 0 — успех>, ...данные]`.
 /// Сообщения с id 0 — события от сервера (уведомления и т.п.).
 @MainActor
@@ -70,7 +70,7 @@ final class PDAClient: ObservableObject {
         let id = nextRequestId
         nextRequestId = nextRequestId >= 0x0FFFFFFF ? 1 : nextRequestId + 1
 
-        let message = PDAValue.array(params + [.string(command), .int(id)])
+        let message = PDAValue.array([.int(id), .string(command)] + params)
         appendLog(outgoing: true, message.description)
 
         return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<PDAValue, Error>) in
@@ -233,7 +233,7 @@ final class PDAClient: ObservableObject {
     private func sendRaw(_ command: String, _ params: [PDAValue]) async throws -> PDAValue {
         let id = nextRequestId
         nextRequestId += 1
-        let message = PDAValue.array(params + [.string(command), .int(id)])
+        let message = PDAValue.array([.int(id), .string(command)] + params)
         appendLog(outgoing: true, message.description)
         return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<PDAValue, Error>) in
             pending[id] = (command, cont)
@@ -265,7 +265,16 @@ final class PDAClient: ObservableObject {
         let payload = PDAValue.array(items)
         appendLog(outgoing: false, "#\(requestId) код \(code): \(payload.description.prefix(2000))")
 
-        guard requestId != 0, let entry = pending.removeValue(forKey: requestId) else { return }
+        if requestId == 0 {
+            // Ошибка без номера запроса относится ко всем ожидающим запросам.
+            if code != 0 {
+                let all = pending
+                pending.removeAll()
+                all.values.forEach { $0.continuation.resume(throwing: PDAServerError(command: $0.command, code: code)) }
+            }
+            return
+        }
+        guard let entry = pending.removeValue(forKey: requestId) else { return }
         if code == 0 {
             entry.continuation.resume(returning: payload)
         } else {
