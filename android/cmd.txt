@@ -67,3 +67,7 @@
 20 wait 2
 21 long 300 660
 21 wait 2
+22 back
+22 wait 1
+22 tap 300 660
+22 wait 5
