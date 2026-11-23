@@ -11,3 +11,7 @@
 1 wait 1
 1 tap 540 971
 1 wait 6
+2 tap 540 960
+2 text 6399
+2 tap 992 1136
+2 wait 7
