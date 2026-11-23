@@ -87,8 +87,14 @@ struct NewsRow: View {
 
 struct NewsDetailView: View {
     let item: NewsItem
+    @EnvironmentObject private var client: PDAClient
     @State private var article: NewsArticle?
     @State private var error: String?
+    @State private var replyTo: NewsComment?
+    @State private var writing = false
+    @State private var commentText = ""
+    @State private var sending = false
+    @State private var alert: ActionAlert?
 
     var body: some View {
         ScrollView {
@@ -110,7 +116,13 @@ struct NewsDetailView: View {
                     BBContentView(article.bodyBB)
                     if !article.comments.isEmpty {
                         Divider().padding(.vertical, 8)
-                        Text("Комментарии (\(article.comments.count))").font(.headline)
+                        HStack {
+                            Text("Комментарии (\(article.comments.count))").font(.headline)
+                            Spacer()
+                            if client.isLoggedIn {
+                                Button("Написать") { replyTo = nil; writing = true }
+                            }
+                        }
                         ForEach(article.comments) { c in
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
@@ -125,6 +137,16 @@ struct NewsDetailView: View {
                             }
                             .padding(.leading, CGFloat(c.depth) * 14)
                             .padding(.vertical, 4)
+                            .contextMenu {
+                                if client.isLoggedIn, !c.isDeleted {
+                                    Button { replyTo = c; writing = true } label: { Label("Ответить", systemImage: "arrowshape.turn.up.left") }
+                                    Button { Task { await rate(c, up: true) } } label: { Label("Нравится", systemImage: "hand.thumbsup") }
+                                    Button { Task { await rate(c, up: false) } } label: { Label("Не нравится", systemImage: "hand.thumbsdown") }
+                                }
+                                NavigationLink(value: ProfileRoute(id: c.authorId, nick: c.authorName)) {
+                                    Label("Профиль \(c.authorName)", systemImage: "person")
+                                }
+                            }
                         }
                     }
                 } else {
@@ -146,6 +168,49 @@ struct NewsDetailView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .task { if article == nil { await load() } }
+        .alert(item: $alert) { Alert(title: Text($0.title), message: Text($0.message)) }
+        .sheet(isPresented: $writing) {
+            NavigationStack {
+                VStack(spacing: 0) {
+                    if let r = replyTo {
+                        Text("Ответ \(r.authorName)").font(.footnote).foregroundStyle(.secondary).padding(8)
+                    }
+                    TextEditor(text: $commentText).padding(.horizontal, 8)
+                }
+                .navigationTitle("Комментарий")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Отмена") { writing = false } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Отправить") { Task { await sendComment() } }
+                            .disabled(sending || commentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
+        }
+    }
+
+    private func sendComment() async {
+        sending = true
+        defer { sending = false }
+        do {
+            try await PDAAPI.sendComment(articleId: item.id, parentId: replyTo?.id ?? 0, text: commentText)
+            commentText = ""
+            writing = false
+            await load()
+        } catch {
+            writing = false
+            alert = ActionAlert(title: "Комментарий", message: error.localizedDescription)
+        }
+    }
+
+    private func rate(_ c: NewsComment, up: Bool) async {
+        do {
+            try await PDAAPI.rateComment(articleId: item.id, commentId: c.id, up: up)
+        } catch {
+            alert = ActionAlert(title: "Ошибка", message: error.localizedDescription)
+        }
     }
 
     private func load() async {

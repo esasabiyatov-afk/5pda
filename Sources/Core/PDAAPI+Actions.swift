@@ -380,4 +380,33 @@ extension PDAAPI {
         }
         return (data.int(0), items)
     }
+
+    // MARK: Комментарии к новостям
+
+    /// Комментарий (`sc`): [id статьи, id родительского комментария (0 — новый), текст].
+    static func sendComment(articleId: Int, parentId: Int, text: String) async throws {
+        do {
+            _ = try await PDAClient.shared.call("sc", [.int(articleId), .int(parentId), .string(text)])
+        } catch let error as PDAServerError {
+            let texts: [Int: String] = [
+                4: "Вам запрещено комментировать", 5: "Нет текста комментария",
+                6: "Комментирование этого поста окончено",
+                7: "Вы не можете ответить на свернутый вами комментарий",
+                8: "Вы достигли кармического лимита комментирования", 9: "Повторный комментарий",
+                10: "Вы достигли часового лимита комментирования", 11: "Вы достигли дневного лимита комментирования",
+                12: "Комментарий отправлен на премодерацию",
+            ]
+            if let t = texts[error.code] { throw PDAMessageError(message: t) }
+            if error.code == 13 || error.code == 14 {
+                let m = PDAClient.shared.lastErrorPayload?.string(0) ?? ""
+                throw PDAMessageError(message: m.isEmpty ? "Недопустимое содержание" : m)
+            }
+            throw PDAMessageError(message: "Ошибка при добавлении комментария")
+        }
+    }
+
+    /// Оценка комментария (`sk`): [id статьи, id комментария, +1/-1].
+    static func rateComment(articleId: Int, commentId: Int, up: Bool) async throws {
+        _ = try await PDAClient.shared.call("sk", [.int(articleId), .int(commentId), .int(up ? 1 : -1)])
+    }
 }
