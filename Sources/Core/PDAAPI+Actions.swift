@@ -567,4 +567,10 @@ extension PDAAPI {
             throw UploadError(code: e.code)
         }
     }
+
+    /// Объявление (`fn`): [id] (0 — правила форума) → [название, текст BB].
+    static func announcement(_ id: Int) async throws -> (title: String, bodyBB: String) {
+        let d = try await PDAClient.shared.call("fn", [.int(id)])
+        return (HTMLEntities.decode(d.string(0)), d.string(1))
+    }
 }

@@ -70,6 +70,15 @@ struct BBContentView: View {
 struct BBBlockView: View {
     let block: BBBlock
     @State private var expanded = false
+    @Environment(\.multilineTextAlignment) private var textAlignment
+
+    private var frameAlignment: Alignment {
+        switch textAlignment {
+        case .center: return .center
+        case .trailing: return .trailing
+        default: return .leading
+        }
+    }
 
     /// Текст со смайлами: куски с ссылкой pdasmile:// заменяются картинками.
     static func render(_ text: AttributedString) -> Text {
@@ -89,9 +98,17 @@ struct BBBlockView: View {
         switch block {
         case .text(let text):
             Self.render(text)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: frameAlignment)
         case .image(let url):
             PostImage(url: url)
+        case .aligned(let a, let inner):
+            VStack(alignment: a == 1 ? .center : .trailing, spacing: 8) {
+                ForEach(Array(inner.enumerated()), id: \.offset) { _, b in
+                    BBBlockView(block: b)
+                        .multilineTextAlignment(a == 1 ? .center : .trailing)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: a == 1 ? .center : .trailing)
         case .video(let id):
             Button {
                 if let u = URL(string: "https://www.youtube.com/watch?v=\(id)") { UIApplication.shared.open(u) }

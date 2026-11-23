@@ -113,7 +113,9 @@ struct ForumView: View {
                     if !page.announcements.isEmpty {
                         Section("Объявления") {
                             ForEach(page.announcements) { a in
-                                Label(a.name, systemImage: "megaphone").font(.subheadline)
+                                NavigationLink(value: MoreRoute.announcement(a.id, a.name)) {
+                                    Label(a.name, systemImage: "megaphone").font(.subheadline)
+                                }
                             }
                         }
                     }

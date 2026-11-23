@@ -268,3 +268,36 @@ struct TopicInfoSheet: View {
         .presentationDetents([.medium, .large])
     }
 }
+
+/// Объявление раздела или правила форума.
+struct AnnouncementView: View {
+    let id: Int
+    let title: String
+    @State private var body_: String?
+    @State private var loadedTitle = ""
+    @State private var error: String?
+
+    var body: some View {
+        ScrollView {
+            if let b = body_ {
+                BBContentView(b).padding()
+            } else if let e = error {
+                ErrorView(message: e) { Task { await load() } }
+            } else {
+                ProgressView().padding(.top, 40)
+            }
+        }
+        .navigationTitle(loadedTitle.isEmpty ? title : loadedTitle)
+        .navigationBarTitleDisplayMode(.inline)
+        .task { if body_ == nil { await load() } }
+    }
+
+    private func load() async {
+        error = nil
+        do {
+            let a = try await PDAAPI.announcement(id)
+            loadedTitle = a.title
+            body_ = a.bodyBB
+        } catch { self.error = error.localizedDescription }
+    }
+}

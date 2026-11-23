@@ -6,6 +6,8 @@ indirect enum BBBlock: Identifiable {
     case text(AttributedString)
     case image(URL)
     case video(id: String)
+    /// Выравнивание: 1 — по центру, 2 — по правому краю.
+    case aligned(Int, [BBBlock])
     case quote(title: String, blocks: [BBBlock])
     case spoiler(title: String, blocks: [BBBlock])
     case code(String)
@@ -15,6 +17,7 @@ indirect enum BBBlock: Identifiable {
         case .text(let t): return "t\(t.hashValue)"
         case .image(let u): return "i\(u.absoluteString)"
         case .video(let v): return "v\(v)"
+        case .aligned(let a, let b): return "a\(a)\(b.count)\(b.first?.id ?? "")"
         case .quote(let t, let b): return "q\(t)\(b.count)\(b.first?.id ?? "")"
         case .spoiler(let t, let b): return "s\(t)\(b.count)\(b.first?.id ?? "")"
         case .code(let c): return "c\(c.hashValue)"
@@ -186,6 +189,11 @@ struct BBParser {
                     flushText()
                     let inner = parseBlocks(&tokens, until: "quote")
                     blocks.append(.quote(title: Self.quoteTitle(arg), blocks: inner))
+                    continue
+                case "center", "right":
+                    flushText()
+                    let inner = parseBlocks(&tokens, until: name)
+                    blocks.append(.aligned(name == "center" ? 1 : 2, inner))
                     continue
                 case "spoiler", "hide", "offtop":
                     flushText()

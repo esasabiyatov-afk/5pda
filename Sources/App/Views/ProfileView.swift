@@ -146,6 +146,7 @@ struct MoreView: View {
                 NavigationLink(value: MoreRoute.search) { Label("Поиск", systemImage: "magnifyingglass") }
             }
             Section {
+                NavigationLink(value: MoreRoute.announcement(0, "Правила форума")) { Label("Правила форума", systemImage: "book") }
                 NavigationLink(value: MoreRoute.settings) { Label("Настройки", systemImage: "gearshape") }
                 NavigationLink(value: MoreRoute.diagnostics) { Label("Диагностика", systemImage: "stethoscope") }
                 NavigationLink(value: MoreRoute.log) { Label("Журнал соединения", systemImage: "terminal") }

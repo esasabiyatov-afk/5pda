@@ -138,6 +138,10 @@ struct AvatarPlaceholder: View {
 /// Картинка в тексте поста: загружается, по нажатию открывается на весь экран.
 struct PostImage: View {
     let url: URL
+    @Environment(\.multilineTextAlignment) private var textAlignment
+    private var frameAlignment: Alignment {
+        textAlignment == .center ? .center : textAlignment == .trailing ? .trailing : .leading
+    }
     @AppStorage("load_images") private var loadImages = true
     @State private var manual = false
     @State private var image: UIImage?
@@ -150,7 +154,7 @@ struct PostImage: View {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
-                    .frame(maxWidth: min(image.size.width, .infinity), maxHeight: 420, alignment: .leading)
+                    .frame(maxWidth: min(image.size.width, .infinity), maxHeight: 420)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .onTapGesture { fullscreen = true }
             } else if !loadImages && !manual {
@@ -171,7 +175,7 @@ struct PostImage: View {
                 ProgressView().frame(maxWidth: .infinity, minHeight: 80)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: frameAlignment)
         .task(id: url) { if loadImages || manual { await load() } }
         .fullScreenCover(isPresented: $fullscreen) {
             if let image = image { ImageViewer(image: image, url: url) }

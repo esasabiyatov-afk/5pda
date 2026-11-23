@@ -33,6 +33,7 @@ extension View {
                 case .diagnostics: DiagnosticsView()
                 case .more: MoreView()
                 case .settings: SettingsView()
+                case .announcement(let id, let title): AnnouncementView(id: id, title: title)
                 case .userTopics(let id, let nick): UserContentView(userId: id, nick: nick, topics: true)
                 case .userPosts(let id, let nick): UserContentView(userId: id, nick: nick, topics: false)
                 }
