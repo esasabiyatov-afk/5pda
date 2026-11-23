@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 
 /// Дерево форумов: категории и разделы.
@@ -64,6 +65,7 @@ struct ForumsView: View {
 struct ForumView: View {
     let route: ForumRoute
     @EnvironmentObject private var client: PDAClient
+    @EnvironmentObject private var router: Router
     @State private var page: ForumPage?
     @State private var topics: [TopicSummary] = []
     @State private var error: String?
@@ -79,7 +81,21 @@ struct ForumView: View {
                     if !page.subforums.isEmpty {
                         Section("Подфорумы") {
                             ForEach(page.subforums) { f in
-                                NavigationLink(f.name, value: ForumRoute(id: f.id, name: f.name))
+                                if !f.link.isEmpty, let url = URL(string: f.link) {
+                                    // Раздел-редирект: ведёт на другой форум или сайт.
+                                    Button {
+                                        if let go = Router.route(for: url) { go(router) } else { UIApplication.shared.open(url) }
+                                    } label: {
+                                        Label(f.name, systemImage: "arrow.turn.up.right").foregroundStyle(.primary)
+                                    }
+                                } else {
+                                    NavigationLink(value: ForumRoute(id: f.id, name: f.name)) {
+                                        HStack {
+                                            Text(f.name)
+                                            if f.hasUnread { Spacer(); Circle().fill(Color.accentColor).frame(width: 8, height: 8) }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -176,9 +192,20 @@ struct TopicRow: View {
                         .font(.subheadline.weight(topic.hasUnread ? .semibold : .regular))
                         .foregroundStyle(topic.isClosed ? .secondary : .primary)
                 }
-                Text("\(topic.lastPoster) · \(topic.lastPostDate.pdaFormatted)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if !topic.description.isEmpty {
+                    Text(topic.description).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+                HStack(spacing: 4) {
+                    if topic.isPinned { Image(systemName: "pin.fill") }
+                    if topic.isClosed { Image(systemName: "lock.fill") }
+                    Text("\(topic.lastPoster) · \(topic.lastPostDate.pdaFormatted)")
+                    if topic.postCount > 0 {
+                        Spacer()
+                        Label("\(topic.postCount)", systemImage: "text.bubble")
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
         }
     }

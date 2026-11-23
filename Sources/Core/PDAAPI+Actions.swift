@@ -123,24 +123,37 @@ extension PDAAPI {
 
     static func post(from p: PDAValue) -> Post? {
         guard p[8]?.stringValue != nil else { return nil }
-        let attachments = (p[11]?.arrayValue ?? []).map { a -> Attachment in
-            let isImage = a.int(1) > 0
-            return Attachment(id: a.int(0), isImage: isImage,
-                              name: isImage ? a.string(4) : a.string(2),
-                              url: a.string(2),
-                              width: isImage ? a.int(5) : 0, height: isImage ? a.int(6) : 0)
-        }
+        let attachments = (p[11]?.arrayValue ?? []).map { attachment(from: $0) }
         return Post(id: p.int(0), flags: p.int(1), authorId: p.int(2),
                     authorName: HTMLEntities.decode(p.string(3)), authorGroup: p.int(4),
                     date: Date(timeIntervalSince1970: TimeInterval(p.int(7))), bodyBB: p.string(8), avatar: p.string(9),
-                    attachments: attachments, editReason: p.string(15),
-                    rating: p.int(12))
+                    attachments: attachments, editReason: HTMLEntities.decode(p.string(15)),
+                    rating: p.int(12), reputation: p.int(6),
+                    lastVisit: p.int(5) > 0 ? Date(timeIntervalSince1970: TimeInterval(p.int(5))) : nil,
+                    signatureBB: p.string(10), editedBy: HTMLEntities.decode(p.string(14)),
+                    editDate: p.int(13) > 0 ? Date(timeIntervalSince1970: TimeInterval(p.int(13))) : nil)
     }
 
+    static func attachment(from a: PDAValue) -> Attachment {
+            // [id, 1 — картинка / 0 — файл, имя, размер, адрес, ширина, высота]
+            let isImage = a.int(1) > 0
+            let url = a.string(4).isEmpty ? a.string(2) : a.string(4)
+            return Attachment(id: a.int(0), isImage: isImage, name: a.string(2), url: url,
+                              width: a.int(5), height: a.int(6), size: a.int(3))
+    }
+
+    /// Тема в списке: [id, название, описание, флаги, постов, дата последнего, id последнего, ник последнего].
     static func topicSummary(_ t: PDAValue) -> TopicSummary {
-        TopicSummary(id: t.int(0), title: HTMLEntities.decode(t.string(1)), flags: t.int(3),
+        TopicSummary(id: t.int(0), title: HTMLEntities.decode(BBParser.plainText(t.string(1))), flags: t.int(3),
                      lastPostDate: Date(timeIntervalSince1970: TimeInterval(t.int(5))),
-                     lastPoster: HTMLEntities.decode(t.string(7)))
+                     lastPoster: HTMLEntities.decode(t.string(7)),
+                     description: HTMLEntities.decode(BBParser.plainText(t.string(2))), postCount: t.int(4))
+    }
+
+    /// Смещение страницы для позиции поста. Позиция 0 — шапка темы, она приходит
+    /// с каждой страницей; страница со смещением N содержит посты N+1…N+20.
+    static func offset(forPosition position: Int) -> Int {
+        position <= 0 ? 0 : ((position - 1) / postsPerPage) * postsPerPage
     }
 
     /// Универсальное действие (`fm`): [тип объекта, [id], маска, значение, причина].
@@ -239,8 +252,7 @@ extension PDAAPI {
     /// Ответ: [id темы, позиция поста, id поста, ...].
     static func findPost(mode: Int, id: Int) async throws -> (topicId: Int, offset: Int, postId: Int) {
         let data = try await PDAClient.shared.call("fj", [.int(mode), .int(id), -1, 0])
-        let position = data.int(1)
-        return (data.int(0), (position / postsPerPage) * postsPerPage, data.int(2))
+        return (data.int(0), offset(forPosition: data.int(1)), data.int(2))
     }
 
     // MARK: Избранное, история, упоминания
@@ -301,11 +313,7 @@ extension PDAAPI {
         let data = try await PDAClient.shared.call("qt", [.int(id), .int(from), .int(count)])
         let messages: [QMSMessage] = data.array(13).compactMap { m in
             guard m[3]?.stringValue != nil else { return nil }
-            let attachments = (m[4]?.arrayValue ?? []).map { a -> Attachment in
-                let isImage = a.int(1) > 0
-                return Attachment(id: a.int(0), isImage: isImage, name: isImage ? a.string(4) : a.string(2),
-                                  url: a.string(2), width: a.int(5), height: a.int(6))
-            }
+            let attachments = (m[4]?.arrayValue ?? []).map { attachment(from: $0) }
             return QMSMessage(id: m.int(0), authorId: m.int(1), date: Date(timeIntervalSince1970: TimeInterval(m.int(2))),
                               textBB: m.string(3), attachments: attachments)
         }.sorted { $0.id < $1.id }
@@ -372,7 +380,7 @@ extension PDAAPI {
             if type & 1 != 0 {
                 let postPart = PDAValue.array(Array(rest.dropFirst(3)))
                 guard let p = post(from: postPart) else { return nil }
-                return .post(topicId: v.int(1), topicTitle: HTMLEntities.decode(v.string(2)), post: p)
+                return .post(topicId: v.int(1), topicTitle: HTMLEntities.decode(BBParser.plainText(v.string(2))), post: p)
             }
             if type & 2 != 0 { return .topic(topicSummary(v)) }
             if type & 4 != 0 { return .article(id: v.int(0), title: HTMLEntities.decode(v.string(1))) }

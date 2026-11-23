@@ -26,6 +26,8 @@ struct NewsComment: Identifiable, Hashable {
     let authorName: String
     let parentId: Int
     let text: String
+    var karma: Int = 0
+    var avatar: String = ""
     var depth: Int = 0
 }
 
@@ -50,6 +52,8 @@ struct TopicSummary: Identifiable, Hashable {
     let flags: Int
     let lastPostDate: Date
     let lastPoster: String
+    var description: String = ""
+    var postCount: Int = 0
     var isPinned: Bool { flags & 1 != 0 }
     var isHighlighted: Bool { flags & 2 != 0 }
     var isClosed: Bool { flags & 4 != 0 }
@@ -73,6 +77,7 @@ struct Attachment: Hashable {
     let url: String
     let width: Int
     let height: Int
+    var size: Int = 0
 }
 
 struct Post: Identifiable, Hashable {
@@ -88,7 +93,13 @@ struct Post: Identifiable, Hashable {
     var editReason: String = ""
     /// Поле 12: бит 1 — можно оценить, 2 — уже оценён (4 — плюс), остальное >> 3 — рейтинг.
     var rating: Int = 0
+    var reputation: Int = 0
+    var lastVisit: Date?
+    var signatureBB: String = ""
+    var editedBy: String = ""
+    var editDate: Date?
 
+    var isOnline: Bool { lastVisit.map { Date().timeIntervalSince($0) < 900 } ?? false }
     var canEdit: Bool { flags & 128 != 0 }
     var canDelete: Bool { flags & 256 != 0 }
     var canRate: Bool { rating & 1 != 0 && rating & 2 == 0 }
@@ -156,7 +167,8 @@ enum PDAAPI {
         let flat = data.array(13).map { c in
             NewsComment(id: c.int(0), date: date(c.int(1)), isDeleted: c.int(2) & 2 != 0,
                         authorId: c.int(3), authorName: HTMLEntities.decode(c.string(4)),
-                        parentId: c.int(5), text: HTMLEntities.decode(c.string(6)))
+                        parentId: c.int(5), text: HTMLEntities.decode(c.string(6)),
+                        karma: c.int(7), avatar: c.string(8))
         }
         // Дерево ответов: ответ идёт после родителя с отступом.
         var ordered: [NewsComment] = []
@@ -185,15 +197,12 @@ enum PDAAPI {
     static func forum(id: Int, offset: Int = 0) async throws -> ForumPage {
         let data = try await PDAClient.shared.call("fs", [.int(id), .int(offset), .int(topicsPerPage)])
         let sub = data.array(6).map { f in
-            ForumEntry(id: f.int(0), name: HTMLEntities.decode(f.string(1)), flags: f.int(2), link: "")
+            ForumEntry(id: f.int(0), name: HTMLEntities.decode(f.string(1)), flags: f.int(2), link: f.string(3))
         }
         let ann = data.array(5).map { f in
             ForumEntry(id: f.int(0), name: HTMLEntities.decode(f.string(1)), flags: 0, link: "")
         }
-        let topics = data.array(8).map { t in
-            TopicSummary(id: t.int(0), title: HTMLEntities.decode(t.string(1)), flags: t.int(3),
-                         lastPostDate: date(t.int(5)), lastPoster: HTMLEntities.decode(t.string(7)))
-        }
+        let topics = data.array(8).map { topicSummary($0) }
         return ForumPage(name: HTMLEntities.decode(data.string(2)), flags: data.int(3),
                          subforums: sub, announcements: ann, topics: topics, totalTopics: data.int(7))
     }
@@ -201,7 +210,13 @@ enum PDAAPI {
     /// Тема (`fr`): [id темы, смещение, постов на страницу, 0].
     static func topic(id: Int, offset: Int = 0, mode: Int = 0) async throws -> TopicPage {
         let data = try await PDAClient.shared.call("fr", [.int(id), .int(offset), .int(postsPerPage), .int(mode)])
-        let posts: [Post] = data.array(12).compactMap { post(from: $0) }
+        var posts: [Post] = data.array(12).compactMap { post(from: $0) }
+        // Шапка темы (первый пост) приходит с каждой страницей — на остальных убираем.
+        let created = data.int(5), author = data.int(6)
+        if offset > 0, let first = posts.first, first.authorId == author,
+           Int(first.date.timeIntervalSince1970) == created {
+            posts.removeFirst()
+        }
         var poll: Poll?
         if let p = data[10], p.count > 3 {
             let questions = p.array(3).map { q in
@@ -214,7 +229,7 @@ enum PDAAPI {
         }
         return TopicPage(id: id, title: HTMLEntities.decode(data.string(2)),
                          description: HTMLEntities.decode(data.string(3)),
-                         totalPosts: data.int(11), flags: data.int(4), authorId: data.int(8),
+                         totalPosts: data.int(11), flags: data.int(4), authorId: data.int(6),
                          posts: posts, poll: poll)
     }
 }

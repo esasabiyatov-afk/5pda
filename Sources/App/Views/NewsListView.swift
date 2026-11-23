@@ -86,6 +86,7 @@ struct NewsRow: View {
 struct NewsDetailView: View {
     let item: NewsItem
     @EnvironmentObject private var client: PDAClient
+    @EnvironmentObject private var router: Router
     @State private var article: NewsArticle?
     @State private var error: String?
     @State private var replyTo: NewsComment?
@@ -121,9 +122,18 @@ struct NewsDetailView: View {
                         }
                         ForEach(article.comments) { c in
                             VStack(alignment: .leading, spacing: 4) {
-                                HStack {
-                                    Text(c.authorName).font(.subheadline.bold())
-                                    Text(c.date.pdaFormatted).font(.caption).foregroundStyle(.secondary)
+                                HStack(spacing: 8) {
+                                    RemoteImage(avatar: PDAAPI.absoluteURL(c.avatar))
+                                        .frame(width: 28, height: 28).clipShape(Circle())
+                                    VStack(alignment: .leading, spacing: 0) {
+                                        Text(c.authorName).font(.subheadline.bold()).foregroundStyle(Color.accentColor)
+                                        Text(c.date.pdaFormatted).font(.caption2).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if c.karma != 0 {
+                                        Label("\(c.karma)", systemImage: "heart.fill")
+                                            .font(.caption).foregroundStyle(c.karma > 0 ? .pink : .secondary)
+                                    }
                                 }
                                 if c.isDeleted {
                                     Text("Комментарий удалён").font(.footnote).foregroundStyle(.secondary)
@@ -139,7 +149,7 @@ struct NewsDetailView: View {
                                     Button { Task { await rate(c, up: true) } } label: { Label("Нравится", systemImage: "hand.thumbsup") }
                                     Button { Task { await rate(c, up: false) } } label: { Label("Не нравится", systemImage: "hand.thumbsdown") }
                                 }
-                                NavigationLink(value: ProfileRoute(id: c.authorId, nick: c.authorName)) {
+                                Button { router.push(ProfileRoute(id: c.authorId, nick: c.authorName)) } label: {
                                     Label("Профиль \(c.authorName)", systemImage: "person")
                                 }
                             }

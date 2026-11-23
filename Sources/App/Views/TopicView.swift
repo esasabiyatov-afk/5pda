@@ -31,9 +31,16 @@ struct TopicView: View {
     }
 
     private var perPage: Int { PDAAPI.postsPerPage }
-    private var total: Int { max(page?.totalPosts ?? 0, endOffset) }
+    /// Постов без шапки (шапка — позиция 0 — приходит с каждой страницей).
+    private var total: Int { max((page?.totalPosts ?? 0) - 1, endOffset) }
     private var pageCount: Int { max(1, (total + perPage - 1) / perPage) }
-    private var currentPage: Int { min(pageCount, visibleIndex / perPage + 1) }
+    /// visibleIndex — номер поста в теме, считая шапку первым.
+    private var currentPage: Int { min(pageCount, visibleIndex <= 1 ? 1 : (visibleIndex - 2) / perPage + 1) }
+
+    /// Номер поста в теме по индексу в загруженном списке.
+    private func number(at index: Int) -> Int {
+        startOffset == 0 ? index + 1 : startOffset + index + 2
+    }
 
     var body: some View {
         Group {
@@ -66,11 +73,11 @@ struct TopicView: View {
                             }
                         }
                         ForEach(Array(posts.enumerated()), id: \.element.id) { index, post in
-                            PostView(post: post, number: startOffset + index + 1, highlighted: post.id == highlightPost)
+                            PostView(post: post, number: number(at: index), highlighted: post.id == highlightPost)
                                 .id(post.id)
                                 .contextMenu { postMenu(post, page: page) }
                                 .onAppear {
-                                    visibleIndex = startOffset + index
+                                    visibleIndex = number(at: index)
                                     if index >= posts.count - 3 { Task { await loadMore() } }
                                 }
                         }
@@ -287,8 +294,8 @@ struct TopicView: View {
             page = p
             posts = p.posts
             startOffset = start
-            endOffset = start + p.posts.count
-            visibleIndex = start
+            endOffset = start + (start == 0 ? max(0, p.posts.count - 1) : p.posts.count)
+            visibleIndex = start == 0 ? 1 : start + 2
             let target = highlightPost.flatMap { h in p.posts.contains { $0.id == h } ? h : nil } ?? p.posts.first?.id
             scrollTarget = target
         } catch {
@@ -346,7 +353,7 @@ struct TopicView: View {
     private func afterSend(_ sent: PDAAPI.SentPost?) async {
         guard let sent = sent else { await refresh(); return }
         highlightPost = sent.postId
-        await load(sent.index)
+        await load(PDAAPI.offset(forPosition: sent.index))
     }
 
     private func rate(_ post: Post, up: Bool) async {
@@ -375,30 +382,74 @@ struct PostView: View {
     let post: Post
     var number: Int = 0
     var highlighted = false
+    @EnvironmentObject private var router: Router
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                RemoteImage(avatar: PDAAPI.absoluteURL(post.avatar))
-                .frame(width: 32, height: 32)
-                .clipShape(Circle())
-                VStack(alignment: .leading) {
-                    Text(post.authorName).font(.subheadline.bold())
-                    Text(post.date.pdaFormatted).font(.caption).foregroundStyle(.secondary)
+            // Шапка поста как в Android-клиенте: аватар 50, ник, группа, дата; справа номер, карма, репутация.
+            HStack(alignment: .top, spacing: 10) {
+                Button { router.push(ProfileRoute(id: post.authorId, nick: post.authorName)) } label: {
+                    RemoteImage(avatar: PDAAPI.absoluteURL(post.avatar))
+                        .frame(width: 44, height: 44)
+                        .clipShape(Circle())
+                        .overlay(alignment: .bottomTrailing) {
+                            if post.isOnline {
+                                Circle().fill(.green).frame(width: 11, height: 11)
+                                    .overlay(Circle().stroke(Color(uiColor: .systemBackground), lineWidth: 2))
+                            }
+                        }
                 }
-                Spacer()
-                if number > 0 {
-                    Text("#\(number)").font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                .buttonStyle(.plain)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(post.authorName).font(.headline).foregroundStyle(Color.accentColor).lineLimit(1)
+                    Text(PDAAPI.groups[post.authorGroup] ?? "").font(.caption).foregroundStyle(.secondary)
+                    Text(post.date.pdaFormatted).font(.caption2).foregroundStyle(.secondary)
                 }
-                if post.showsRating {
-                    Text(post.ratingValue > 0 ? "+\(post.ratingValue)" : "\(post.ratingValue)")
-                        .font(.caption.bold())
-                        .foregroundStyle(post.ratingValue >= 0 ? .green : .red)
+                Spacer(minLength: 4)
+                VStack(alignment: .trailing, spacing: 2) {
+                    if number > 0 {
+                        Text("#\(number)").font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                    if post.showsRating {
+                        Text(post.ratingValue > 0 ? "+\(post.ratingValue)" : "\(post.ratingValue)")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(post.ratingValue > 0 ? .green : post.ratingValue < 0 ? .red : .secondary)
+                    }
+                    Label("\(post.reputation)", systemImage: "hand.thumbsup")
+                        .labelStyle(.titleAndIcon).font(.caption2).foregroundStyle(.secondary)
                 }
             }
             BBContentView(post.bodyBB, attachments: post.attachments)
-            if !post.editReason.isEmpty {
-                Text("Причина правки: \(post.editReason)").font(.caption2).foregroundStyle(.secondary)
+            let unused = post.attachments.filter { a in !post.bodyBB.contains("\(a.id)") }
+            if !unused.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(unused, id: \.id) { a in
+                        if a.isImage, let u = PDAAPI.absoluteURL(a.url) {
+                            PostImage(url: u)
+                        } else if let u = PDAAPI.absoluteURL(a.url) {
+                            BrowserLink(destination: u) {
+                                Label(a.name + (a.size > 0 ? " · " + ByteCountFormatter.string(fromByteCount: Int64(a.size), countStyle: .file) : ""),
+                                      systemImage: "paperclip").font(.footnote)
+                            }
+                        }
+                    }
+                }
+            }
+            if post.editDate != nil || !post.editReason.isEmpty {
+                VStack(alignment: .leading, spacing: 1) {
+                    if let d = post.editDate {
+                        Text("Изменено: \(post.editedBy.isEmpty ? "" : post.editedBy + " — ")\(d.pdaFormatted)")
+                    }
+                    if !post.editReason.isEmpty { Text("Причина: \(post.editReason)") }
+                }
+                .font(.caption2).foregroundStyle(.secondary)
+            }
+            if !post.signatureBB.isEmpty {
+                Divider()
+                BBContentView(post.signatureBB)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(4)
             }
         }
         .padding(.vertical, 6)

@@ -23,6 +23,7 @@ struct LoginRequired<Content: View>: View {
 // MARK: - Избранное
 
 struct FavoritesView: View {
+    @EnvironmentObject private var router: Router
     @State private var items: [FavoriteItem] = []
     @State private var total = 0
     @State private var error: String?
@@ -84,8 +85,8 @@ struct FavoritesView: View {
         }
         .contextMenu {
             if !item.isForum {
-                NavigationLink(value: TopicRoute(id: item.id, title: item.title, jump: .last)) { Label("Перейти в конец", systemImage: "arrow.down.to.line") }
-                NavigationLink(value: TopicRoute(id: item.id, title: item.title, jump: .start)) { Label("Перейти в начало", systemImage: "arrow.up.to.line") }
+                Button { router.push(TopicRoute(id: item.id, title: item.title, jump: .last)) } label: { Label("Перейти в конец", systemImage: "arrow.down.to.line") }
+                Button { router.push(TopicRoute(id: item.id, title: item.title, jump: .start)) } label: { Label("Перейти в начало", systemImage: "arrow.up.to.line") }
             }
             Button { Task { await setImportant(item, !item.isImportant) } } label: {
                 Label(item.isImportant ? "Убрать из важных" : "Добавить в важные", systemImage: "flag")

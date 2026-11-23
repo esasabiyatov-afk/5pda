@@ -31,15 +31,21 @@ struct BBParser {
     private static let known: Set<String> = [
         "attachment", "background", "b", "center", "code", "color", "cur", "ex", "font", "hide", "img", "i",
         "left", "list", "mergetime", "mod", "offtop", "quote", "right", "size", "snapback", "spoiler",
-        "sub", "sup", "s", "url", "u", "*", "break", "na", "seporator",
+        "sub", "sup", "s", "url", "u", "*", "break", "na", "seporator", "backgroud", "indent", "numlist",
+        "table", "tr", "td", "th", "hr", "video", "user", "anchor", "strike", "spoil", "acronym",
     ]
 
     var attachments: [Attachment] = []
 
     /// Текст без разметки (для копирования).
+    /// Служебные символы подсветки в результатах поиска.
+    static func stripMarkers(_ s: String) -> String {
+        s.replacingOccurrences(of: "\u{2}", with: "").replacingOccurrences(of: "\u{3}", with: "")
+    }
+
     static func plainText(_ source: String) -> String {
         var out = ""
-        for t in tokenize(source) {
+        for t in tokenize(stripMarkers(source)) {
             switch t.kind {
             case .text(let s): out += HTMLEntities.decode(s)
             case .open(let n, _): if n == "*" { out += "\n• " } else if n == "break" { out += "\n" }
@@ -50,7 +56,7 @@ struct BBParser {
     }
 
     func parse(_ source: String) -> [BBBlock] {
-        var tokens = Self.tokenize(source)
+        var tokens = Self.tokenize(Self.stripMarkers(source))
         tokens.reverse()
         return parseBlocks(&tokens, until: nil)
     }
@@ -100,6 +106,11 @@ struct BBParser {
                 var st = styles.last!.1
                 switch name {
                 case "b": st.bold = true
+                case "background", "backgroud": st.bold = true
+                case "hr": append("\n──────────\n"); continue
+                case "tr": append("\n"); continue
+                case "td", "th": append("  "); if name == "th" { st.bold = true }
+                case "strike": st.strike = true
                 case "i": st.italic = true
                 case "u": st.underline = true
                 case "s": st.strike = true
@@ -188,9 +199,9 @@ struct BBParser {
         var text = ""
         var i = s.startIndex
         while i < s.endIndex {
-            if s[i] == "[", let end = s[i...].firstIndex(of: "]") {
+            if s[i] == "[", let end = matchingBracket(s, from: i) {
                 let inner = String(s[s.index(after: i)..<end])
-                if !inner.contains("["), let tok = tagToken(inner) {
+                if let tok = tagToken(inner) {
                     if !text.isEmpty { tokens.append(Token(kind: .text(text))); text = "" }
                     tokens.append(tok)
                     i = s.index(after: end)
@@ -202,6 +213,21 @@ struct BBParser {
         }
         if !text.isEmpty { tokens.append(Token(kind: .text(text))) }
         return tokens
+    }
+
+    /// Закрывающая скобка тега с учётом вложенных тегов в аргументе:
+    /// [spoiler=[size=2]Заголовок[/size]].
+    private static func matchingBracket(_ s: String, from start: String.Index) -> String.Index? {
+        var depth = 0
+        var i = start
+        var steps = 0
+        while i < s.endIndex, steps < 400 {
+            if s[i] == "[" { depth += 1 }
+            if s[i] == "]" { depth -= 1; if depth == 0 { return i } }
+            if s[i] == "\n" { return nil }
+            i = s.index(after: i); steps += 1
+        }
+        return nil
     }
 
     private static func tagToken(_ inner: String) -> Token? {
@@ -217,6 +243,9 @@ struct BBParser {
         }
         name = name.lowercased()
         guard known.contains(name) else { return nil }
+        // Вложенная разметка допустима только в аргументе (заголовок спойлера и т.п.).
+        if name.contains("[") { return nil }
+        if arg.contains("[") { arg = plainText(arg) }
         return Token(kind: .open(name, arg))
     }
 
