@@ -190,6 +190,17 @@ struct TopicView: View {
                 }
                 Button { showSearch = true } label: { Label("Поиск в теме", systemImage: "magnifyingglass") }
                 Button { showInfo = true } label: { Label("О теме", systemImage: "info.circle") }
+                if client.isLoggedIn {
+                    Button {
+                        let url = "forum/index.php?showtopic=\(topicId)" + (startOffset > 0 ? "&st=\(startOffset)" : "")
+                        Task {
+                            do {
+                                try await PDAAPI.addBookmark(title: page.title, url: url)
+                                alert = ActionAlert(title: "Готово", message: "Добавлено в закладки")
+                            } catch { alert = ActionAlert(title: "Ошибка", message: error.localizedDescription) }
+                        }
+                    } label: { Label("В закладки", systemImage: "bookmark") }
+                }
                 Button {
                     UIPasteboard.general.string = topicURL.absoluteString
                 } label: { Label("Копировать ссылку", systemImage: "link") }

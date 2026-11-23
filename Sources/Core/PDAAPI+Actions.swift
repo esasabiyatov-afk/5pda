@@ -456,7 +456,25 @@ extension PDAAPI {
     /// Закладки (`mb`): [время синхронизации, [изменения]] →
     /// [время, [[id, новый id]], [[id, изменено, удалено, флаги, папка, порядок, название, адрес]]].
     static func bookmarks() async throws -> [Bookmark] {
-        let data = try await PDAClient.shared.call("mb", [0, .array([])])
+        try await syncBookmarks(changes: [])
+    }
+
+    /// Добавляет закладку (адрес относительно сайта, как в Android: forum/index.php?showtopic=…).
+    static func addBookmark(title: String, url: String) async throws {
+        let existing = (try? await bookmarks()) ?? []
+        let order = (existing.map(\.order).max() ?? 0) + 1
+        let now = Int(Date().timeIntervalSince1970)
+        _ = try await syncBookmarks(changes: [[.int(-Int.random(in: 1...1_000_000)), .int(now), 0, 0, 0, .int(order), .string(title), .string(url)]])
+    }
+
+    static func deleteBookmark(_ b: Bookmark) async throws {
+        let now = Int(Date().timeIntervalSince1970)
+        _ = try await syncBookmarks(changes: [[.int(b.id), .int(now), 1, .int(b.isFolder ? 1 : 0), .int(b.parent), .int(b.order),
+                                               .string(b.title), .string(b.url)]])
+    }
+
+    private static func syncBookmarks(changes: [PDAValue]) async throws -> [Bookmark] {
+        let data = try await PDAClient.shared.call("mb", [0, .array(changes)])
         return data.array(2).compactMap { b in
             b.int(2) != 0 ? nil : Bookmark(id: b.int(0), isFolder: b.int(3) & 1 != 0, parent: b.int(4), order: b.int(5),
                                            title: HTMLEntities.decode(b.string(6)), url: b.string(7))

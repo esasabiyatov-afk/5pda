@@ -126,6 +126,9 @@ struct HomeView: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
+            Button(role: .destructive) {
+                Task { try? await PDAAPI.deleteBookmark(b); await load() }
+            } label: { Label("Удалить закладку", systemImage: "trash") }
             if !b.url.isEmpty {
                 Button { UIPasteboard.general.string = absolute(b.url)?.absoluteString } label: {
                     Label("Копировать ссылку", systemImage: "link")

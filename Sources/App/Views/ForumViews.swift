@@ -183,6 +183,10 @@ struct ForumView: View {
                     } label: { Label("Отметить прочитанным", systemImage: "eye") }
                     Button { showInfo = true } label: { Label("О форуме", systemImage: "info.circle") }
                     Button {
+                        Task { try? await PDAAPI.addBookmark(title: page.name.isEmpty ? route.name : page.name,
+                                                             url: "forum/index.php?showforum=\(route.id)") }
+                    } label: { Label("В закладки", systemImage: "bookmark") }
+                    Button {
                         UIPasteboard.general.string = PDAConfig.siteURL.absoluteString + "forum/index.php?showforum=\(route.id)"
                     } label: { Label("Копировать ссылку", systemImage: "link") }
                     BrowserLink(destination: URL(string: PDAConfig.siteURL.absoluteString + "forum/index.php?showforum=\(route.id)")!) {
