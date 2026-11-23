@@ -1,1 +1,13 @@
 0 wait 1
+1 tap 1011 152
+1 wait 2
+1 tap 540 491
+1 wait 1
+1 secret login
+1 tap 540 673
+1 wait 1
+1 secret password
+1 key 111
+1 wait 1
+1 tap 540 971
+1 wait 6
