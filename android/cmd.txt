@@ -19,3 +19,7 @@
 3 wait 4
 4 tap 424 141
 4 wait 2
+5 back
+5 wait 1
+5 tap 1022 141
+5 wait 2
