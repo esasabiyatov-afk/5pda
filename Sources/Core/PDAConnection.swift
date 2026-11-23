@@ -23,6 +23,7 @@ final class PDAConnection {
     private var buffer = Data()
     private var fragments = Data()
     private var handshakeDone = false
+    private var inflater = StreamInflater()
     private var pingTimer: DispatchSourceTimer?
 
     /// - Parameter webSocketHost: nil — «сырое» TCP-соединение (основной режим, порт 993),
@@ -45,6 +46,7 @@ final class PDAConnection {
         buffer.removeAll()
         fragments.removeAll()
         handshakeDone = false
+        inflater = StreamInflater()
 
         var finished = false
         let finish: (Result<Void, Error>) -> Void = { result in
@@ -171,12 +173,9 @@ final class PDAConnection {
                     connection?.cancel()
                     return
                 default:
-                    fragments.append(frame.payload)
-                    if frame.fin {
-                        let message = fragments
-                        fragments = Data()
-                        onMessage?(message)
-                    }
+                    // Как в оригинальном клиенте: каждый кадр — целое сообщение.
+                    let message = frame.compressed ? try inflater.inflate(frame.payload) : frame.payload
+                    onMessage?(message)
                 }
             }
         } catch {

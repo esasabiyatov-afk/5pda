@@ -11,6 +11,7 @@ enum WSOpcode: UInt8 {
 struct WSFrame {
     var fin: Bool
     var opcode: UInt8
+    var compressed: Bool
     var payload: Data
 }
 
@@ -79,13 +80,7 @@ enum WebSocketFramer {
             for i in 0..<bytes.count { bytes[i] ^= mask[i % 4] }
             payload = Data(bytes)
         }
-        if compressed {
-            guard payload.count >= 4 else { throw Deflate.Error.corrupted }
-            let p = [UInt8](payload.prefix(4))
-            let rawLen = Int(p[0]) | Int(p[1]) << 8 | Int(p[2]) << 16 | Int(p[3]) << 24
-            payload = try Deflate.decompress(Data(payload.dropFirst(4)), expectedSize: rawLen)
-        }
-        return WSFrame(fin: fin, opcode: opcode, payload: payload)
+        return WSFrame(fin: fin, opcode: opcode, compressed: compressed, payload: payload)
     }
 }
 
@@ -117,5 +112,52 @@ enum Deflate {
         }
         guard written > 0 else { throw Error.corrupted }
         return Data(out.prefix(written))
+    }
+}
+
+/// Потоковый распаковщик raw DEFLATE с общим контекстом на всё соединение.
+/// Сервер сжимает все ответы одним потоком (как permessage-deflate с context takeover):
+/// кадр = 4 байта LE (исходная длина) + сжатые данные без маркера 00 00 FF FF.
+final class StreamInflater {
+    private var stream = compression_stream(dst_ptr: UnsafeMutablePointer<UInt8>(bitPattern: 1)!, dst_size: 0,
+                                            src_ptr: UnsafePointer<UInt8>(bitPattern: 1)!, src_size: 0, state: nil)
+    private var ready = false
+
+    init() {
+        ready = compression_stream_init(&stream, COMPRESSION_STREAM_DECODE, COMPRESSION_ZLIB) == COMPRESSION_STATUS_OK
+    }
+
+    deinit {
+        if ready { compression_stream_destroy(&stream) }
+    }
+
+    func inflate(_ frame: Data) throws -> Data {
+        guard ready, frame.count >= 4 else { throw Deflate.Error.corrupted }
+        let p = [UInt8](frame.prefix(4))
+        let expected = Int(p[0]) | Int(p[1]) << 8 | Int(p[2]) << 16 | Int(p[3]) << 24
+        var input = [UInt8](frame.dropFirst(4))
+        input += [0x00, 0x00, 0xFF, 0xFF]
+
+        var output = Data()
+        let chunk = max(expected, 4096)
+        var buffer = [UInt8](repeating: 0, count: chunk)
+        try input.withUnsafeBufferPointer { src in
+            stream.src_ptr = src.baseAddress!
+            stream.src_size = src.count
+            repeat {
+                let status: compression_status = buffer.withUnsafeMutableBufferPointer { dst in
+                    stream.dst_ptr = dst.baseAddress!
+                    stream.dst_size = dst.count
+                    return compression_stream_process(&stream, 0)
+                }
+                let produced = chunk - stream.dst_size
+                if produced > 0 { output.append(contentsOf: buffer[0..<produced]) }
+                if status == COMPRESSION_STATUS_ERROR { throw Deflate.Error.corrupted }
+                if status == COMPRESSION_STATUS_END { break }
+                if produced == 0 && stream.src_size == 0 { break }
+            } while stream.src_size > 0 || stream.dst_size == 0
+        }
+        if output.count > expected { output = output.prefix(expected) }
+        return output
     }
 }

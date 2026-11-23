@@ -6,6 +6,9 @@ struct AccountView: View {
     @State private var password = ""
     @State private var busy = false
     @State private var error: String?
+    @State private var hidden = false
+    @State private var captchaURL: URL?
+    @State private var captchaAnswer = ""
 
     var body: some View {
         Form {
@@ -32,6 +35,17 @@ struct AccountView: View {
                         .autocorrectionDisabled()
                     SecureField("Пароль", text: $password)
                         .textContentType(.password)
+                    Toggle("Скрытый вход", isOn: $hidden)
+                    if let url = captchaURL {
+                        AsyncImage(url: url) { image in
+                            image.resizable().scaledToFit()
+                        } placeholder: {
+                            ProgressView()
+                        }
+                        .frame(maxHeight: 80)
+                        TextField("Число с картинки", text: $captchaAnswer)
+                            .keyboardType(.numberPad)
+                    }
                     Button {
                         Task { await login() }
                     } label: {
@@ -73,8 +87,15 @@ struct AccountView: View {
         defer { busy = false }
         error = nil
         do {
-            try await client.login(username: username, password: password)
+            try await client.login(username: username, password: password, hidden: hidden,
+                                   captcha: Int(captchaAnswer) ?? 0)
             password = ""
+            captchaURL = nil
+            captchaAnswer = ""
+        } catch let e as PDAClient.CaptchaRequired {
+            captchaURL = e.imageURL
+            captchaAnswer = ""
+            error = captchaURL == nil ? "Сервер просит капчу, но не прислал картинку" : "Введите число с картинки и нажмите «Войти» ещё раз"
         } catch let e as PDAServerError {
             error = "Не удалось войти (код \(e.code)). Проверьте логин и пароль; если сервер просит капчу, войдите один раз на сайте."
         } catch {

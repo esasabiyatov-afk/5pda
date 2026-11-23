@@ -88,6 +88,8 @@ struct NewsRow: View {
 
 struct NewsDetailView: View {
     let item: NewsItem
+    @State private var article: NewsArticle?
+    @State private var error: String?
 
     var body: some View {
         ScrollView {
@@ -104,8 +106,39 @@ struct NewsDetailView: View {
                 Text("\(item.authorName) · \(item.date.pdaFormatted)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                BBContentView(item.descriptionBB)
-                if let url = URL(string: "\(PDAClient.shared.siteURL.absoluteString)index.php?p=\(item.id)") {
+
+                if let article = article {
+                    BBContentView(article.bodyBB)
+                    if !article.comments.isEmpty {
+                        Divider().padding(.vertical, 8)
+                        Text("Комментарии (\(article.comments.count))").font(.headline)
+                        ForEach(article.comments) { c in
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text(c.authorName).font(.subheadline.bold())
+                                    Text(c.date.pdaFormatted).font(.caption).foregroundStyle(.secondary)
+                                }
+                                if c.isDeleted {
+                                    Text("Комментарий удалён").font(.footnote).foregroundStyle(.secondary)
+                                } else {
+                                    BBContentView(c.text)
+                                }
+                            }
+                            .padding(.leading, CGFloat(c.depth) * 14)
+                            .padding(.vertical, 4)
+                        }
+                    }
+                } else {
+                    BBContentView(item.descriptionBB)
+                    if let error = error {
+                        Text("Не удалось загрузить статью: \(error)").font(.footnote).foregroundStyle(.red)
+                        Button("Повторить") { Task { await load() } }
+                    } else {
+                        ProgressView().frame(maxWidth: .infinity)
+                    }
+                }
+
+                if let url = URL(string: "\(PDAConfig.siteURL.absoluteString)index.php?p=\(item.id)") {
                     Link("Открыть статью на сайте", destination: url)
                         .padding(.top, 8)
                 }
@@ -113,5 +146,15 @@ struct NewsDetailView: View {
             .padding()
         }
         .navigationBarTitleDisplayMode(.inline)
+        .task { if article == nil { await load() } }
+    }
+
+    private func load() async {
+        error = nil
+        do {
+            article = try await PDAAPI.article(id: item.id)
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 }

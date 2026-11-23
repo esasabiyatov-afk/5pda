@@ -7,6 +7,10 @@ struct PDAServerError: LocalizedError {
     var errorDescription: String? { "Сервер вернул ошибку \(code) на команду «\(command)»" }
 }
 
+struct OutdatedClientError: LocalizedError {
+    var errorDescription: String? { "Сервер считает версию клиента устаревшей (код 3 на приветствие)" }
+}
+
 struct PDATimeoutError: LocalizedError {
     var errorDescription: String? { "Сервер не ответил вовремя" }
 }
@@ -53,6 +57,8 @@ final class PDAClient: ObservableObject {
     private var provisioned = false
 
     private let defaults = UserDefaults.standard
+    /// Данные последнего ответа с ошибкой (например, ссылка на капчу).
+    private(set) var lastErrorPayload: PDAValue?
 
     private init() {
         memberId = defaults.integer(forKey: "member_id")
@@ -83,9 +89,21 @@ final class PDAClient: ObservableObject {
         }
     }
 
-    /// Вход по логину и паролю (команда `ml`).
-    func login(username: String, password: String) async throws {
-        let data = try await call("ml", [.string(username), .string(password), 1, 0])
+    /// Сервер просит капчу: ссылка на картинку с числом.
+    struct CaptchaRequired: LocalizedError {
+        let imageURL: URL?
+        var errorDescription: String? { "Нужно ввести число с картинки" }
+    }
+
+    /// Вход по логину и паролю (команда `ml`): [логин, пароль, скрытый режим (0/1), ответ на капчу].
+    /// Код 4 — нужна капча, в данных ссылка на картинку.
+    func login(username: String, password: String, hidden: Bool = false, captcha: Int = 0) async throws {
+        let data: PDAValue
+        do {
+            data = try await call("ml", [.string(username), .string(password), .int(hidden ? 1 : 0), .int(captcha)])
+        } catch let error as PDAServerError where error.code == 4 {
+            throw CaptchaRequired(imageURL: lastErrorPayload.flatMap { PDAAPI.absoluteURL($0.string(0)) })
+        }
         let id = data.int(0)
         let key = data.string(1)
         guard id > 0, !key.isEmpty else { throw PDAServerError(command: "ml", code: -1) }
@@ -93,6 +111,7 @@ final class PDAClient: ObservableObject {
         memberName = username
         defaults.set(id, forKey: "member_id")
         defaults.set(username, forKey: "member_name")
+        defaults.set(hidden, forKey: "member_hidden")
         KeychainStore.set(key, for: "login_key")
     }
 
@@ -216,10 +235,16 @@ final class PDAClient: ObservableObject {
     /// Приветствие (`ah`) и вход по сохранённому ключу (`ma`).
     private func greet() async throws {
         let hello: [PDAValue] = [.string(Self.protocolVersion), "", .string(Self.clientName), 1, .int(memberId)]
-        _ = try await sendRaw("ah", hello)
+        do {
+            _ = try await sendRaw("ah", hello)
+        } catch let error as PDAServerError where error.code == 3 {
+            throw OutdatedClientError()
+        }
         if memberId > 0, let key = KeychainStore.get("login_key") {
             do {
-                _ = try await sendRaw("ma", [.int(memberId), .string(key)])
+                var params: [PDAValue] = [.int(memberId), .string(key)]
+                if defaults.bool(forKey: "member_hidden") { params.append(1) }
+                _ = try await sendRaw("ma", params)
             } catch let error as PDAServerError {
                 appendLog(outgoing: false, "Сохранённый вход не принят (\(error.code)), нужен повторный вход")
                 memberId = 0
@@ -278,6 +303,7 @@ final class PDAClient: ObservableObject {
         if code == 0 {
             entry.continuation.resume(returning: payload)
         } else {
+            lastErrorPayload = payload
             entry.continuation.resume(throwing: PDAServerError(command: entry.command, code: code))
         }
     }

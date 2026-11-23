@@ -18,6 +18,23 @@ struct NewsItem: Identifiable, Hashable {
     let commentsCount: Int
 }
 
+struct NewsComment: Identifiable, Hashable {
+    let id: Int
+    let date: Date
+    let isDeleted: Bool
+    let authorId: Int
+    let authorName: String
+    let parentId: Int
+    let text: String
+    var depth: Int = 0
+}
+
+struct NewsArticle {
+    let item: NewsItem
+    let bodyBB: String
+    let comments: [NewsComment]
+}
+
 struct ForumEntry: Identifiable, Hashable {
     let id: Int
     let name: String
@@ -98,18 +115,45 @@ enum PDAAPI {
     static func news(offset: Int = 0, category: Int = 0) async throws -> [NewsItem] {
         let data = try await PDAClient.shared.call("sl", [.int(offset), 30, -1, .int(category)])
         return data.array(1).compactMap { item in
-            guard item.count > 10 else { return nil }
-            return NewsItem(
-                id: item.int(0),
-                date: date(item.int(1)),
-                title: HTMLEntities.decode(item.string(9)),
-                descriptionBB: item.string(10),
-                imageURL: absoluteURL(item.string(8)),
-                authorId: item.int(5),
-                authorName: HTMLEntities.decode(item.string(6)),
-                commentsCount: item.int(7)
-            )
+            item.count > 10 ? newsItem(item) : nil
         }
+    }
+
+    private static func newsItem(_ item: PDAValue) -> NewsItem {
+        NewsItem(
+            id: item.int(0),
+            date: date(item.int(1)),
+            title: HTMLEntities.decode(item.string(9)),
+            descriptionBB: item.string(10),
+            imageURL: absoluteURL(item.string(8)),
+            authorId: item.int(5),
+            authorName: HTMLEntities.decode(item.string(6)),
+            commentsCount: item.int(7)
+        )
+    }
+
+    /// Статья целиком (`sa`): [id]. Данные — как элемент ленты; в поле 13 — комментарии
+    /// [id, дата, флаги (2 — удалён), id автора, ник, id родителя, текст, ...].
+    static func article(id: Int) async throws -> NewsArticle {
+        let data = try await PDAClient.shared.call("sa", [.int(id)])
+        let flat = data.array(13).map { c in
+            NewsComment(id: c.int(0), date: date(c.int(1)), isDeleted: c.int(2) & 2 != 0,
+                        authorId: c.int(3), authorName: HTMLEntities.decode(c.string(4)),
+                        parentId: c.int(5), text: HTMLEntities.decode(c.string(6)))
+        }
+        // Дерево ответов: ответ идёт после родителя с отступом.
+        var ordered: [NewsComment] = []
+        func add(parent: Int, depth: Int) {
+            for var c in flat where c.parentId == parent && c.id != parent {
+                c.depth = depth
+                ordered.append(c)
+                add(parent: c.id, depth: min(depth + 1, 6))
+            }
+        }
+        add(parent: 0, depth: 0)
+        let known = Set(ordered.map(\.id))
+        ordered += flat.filter { !known.contains($0.id) }
+        return NewsArticle(item: newsItem(data), bodyBB: data.string(10), comments: ordered)
     }
 
     /// Дерево форумов (`fi`): плоский список, категории помечены флагом 16.
@@ -144,9 +188,10 @@ enum PDAAPI {
             guard p[8]?.stringValue != nil else { return nil }
             let attachments = (p[11]?.arrayValue ?? []).map { a -> Attachment in
                 let isImage = a.int(1) > 0
+                // Картинка: [id, 1, url, ?, имя, ширина, высота]; файл: [id, 0, имя/url, ...]
                 return Attachment(id: a.int(0), isImage: isImage,
-                                  name: isImage ? a.string(2) : a.string(2),
-                                  url: isImage ? a.string(4) : a.string(2),
+                                  name: isImage ? a.string(4) : a.string(2),
+                                  url: a.string(2),
                                   width: isImage ? a.int(5) : 0, height: isImage ? a.int(6) : 0)
             }
             return Post(id: p.int(0), flags: p.int(1), authorId: p.int(2),
