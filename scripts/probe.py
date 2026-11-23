@@ -303,12 +303,16 @@ def main():
     run("search-all", "rc", [131072 | 3, [], [], [], "iphone", 0, 20])
     run("search-site", "rc", [(3 ^ 3) | 4, [], [], [], "iphone", 0, 20])
     run("profile-1", "mi", [1])
+    run("sitemenu", "sm", [0])
     if me:
         run("profile-me", "mi", [me])
         run("favorites", "mf", [0, 30, 0])
         run("history", "mh", [0, 30])
         run("mentions", "mm", [0, 0, 1, 0, 20])
-        run("unread", "mn", [])
+        run("unread", "mn", [0, 0, 0])
+        run("bookmarks", "mb", [0, []])
+        run("reputation", "mr", [me, 0, 0, 200])
+        run("user-posts", "rc", [131072 | 1, [], [], [me], "", 0, 20])
     cl.log("готово")
 
 if __name__ == "__main__":
