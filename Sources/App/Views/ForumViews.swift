@@ -1,6 +1,5 @@
 import SwiftUI
 
-struct ForumRoute: Hashable { let id: Int; let name: String }
 
 /// Дерево форумов: категории и разделы.
 struct ForumsView: View {

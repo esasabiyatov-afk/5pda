@@ -43,8 +43,10 @@ jobs:
             -derivedDataPath build \
             MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            build | tee xcodebuild.log | grep -E '(error|BUILD)' || true
-          test -d build/Build/Products/Release-iphoneos/FivePDA.app
+            build > xcodebuild.log 2>&1 || { grep -E 'error:' xcodebuild.log | sort -u | head -100; exit 1; }
+          grep -E 'BUILD SUCCEEDED' xcodebuild.log
+          test -f build/Build/Products/Release-iphoneos/FivePDA.app/FivePDA
+          test -f build/Build/Products/Release-iphoneos/FivePDA.app/Info.plist
 
       - name: Show errors
         if: failure()
@@ -56,6 +58,7 @@ jobs:
           cp -R build/Build/Products/Release-iphoneos/FivePDA.app Payload/
           zip -qry "5PDA.ipa" Payload
           ls -la 5PDA.ipa
+          test $(stat -f%z 5PDA.ipa) -gt 100000
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
