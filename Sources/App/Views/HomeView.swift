@@ -85,6 +85,7 @@ struct HomeView: View {
         }
         .refreshable { await load() }
         .task { if !loadedBookmarks { await load() } }
+        .task { ScreenshotRoute.apply(router: router, tabs: tabs) }
         .onChange(of: client.memberId) { _ in Task { await load() } }
     }
 
@@ -168,5 +169,34 @@ struct HomeView: View {
         guard client.isLoggedIn else { bookmarks = []; loadedBookmarks = true; return }
         bookmarks = (try? await PDAAPI.bookmarks()) ?? []
         loadedBookmarks = true
+    }
+}
+
+/// Открытие экрана по аргументу запуска `-screenshotRoute` — для автоматических
+/// скриншотов в симуляторе (topic:ID, forum:ID, article:ID, profile:ID, tab:site …).
+enum ScreenshotRoute {
+    @MainActor static func apply(router: Router, tabs: TabSelection) {
+        guard let raw = UserDefaults.standard.string(forKey: "screenshotRoute"), !raw.isEmpty else { return }
+        let parts = raw.split(separator: ":", maxSplits: 1).map(String.init)
+        let arg = parts.count > 1 ? parts[1] : ""
+        let id = Int(arg) ?? 0
+        switch parts[0] {
+        case "tab":
+            switch arg {
+            case "site": tabs.tab = .site
+            case "forum": tabs.tab = .forum
+            case "favorites": tabs.tab = .favorites
+            case "qms": tabs.tab = .qms
+            default: tabs.tab = .home
+            }
+        case "topic": router.push(TopicRoute(id: id, title: "Тема"))
+        case "forum": router.push(ForumRoute(id: id, name: "Форум"))
+        case "article": router.push(ArticleRoute(id: id))
+        case "profile": router.push(ProfileRoute(id: id, nick: "Профиль"))
+        case "settings": router.push(MoreRoute.settings)
+        case "menu": router.push(MoreRoute.more)
+        case "search": router.push(MoreRoute.search)
+        default: break
+        }
     }
 }
