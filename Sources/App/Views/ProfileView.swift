@@ -108,9 +108,14 @@ struct MoreView: View {
                 NavigationLink(value: MoreRoute.search) { Label("Поиск", systemImage: "magnifyingglass") }
             }
             Section {
+                NavigationLink(value: MoreRoute.diagnostics) { Label("Диагностика", systemImage: "stethoscope") }
                 NavigationLink(value: MoreRoute.log) { Label("Журнал соединения", systemImage: "terminal") }
             }
         }
         .navigationTitle("Ещё")
+        .safeAreaInset(edge: .bottom) {
+            Text("Нашли ошибку? Встряхните телефон на нужном экране.")
+                .font(.caption).foregroundStyle(.secondary).padding(.bottom, 6)
+        }
     }
 }

@@ -30,6 +30,7 @@ extension View {
                 case .history: HistoryView()
                 case .search: SearchView()
                 case .log: DebugConsoleView()
+                case .diagnostics: DiagnosticsView()
                 }
             }
     }

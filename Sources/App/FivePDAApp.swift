@@ -22,6 +22,7 @@ struct FivePDAApp: App {
             }
             .environmentObject(client)
             .task { await updater.check() }
+            .modifier(ShakeToReport())
         }
     }
 }
