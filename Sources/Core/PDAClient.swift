@@ -89,6 +89,31 @@ final class PDAClient: ObservableObject {
         }
     }
 
+    /// Команда с двоичными данными после параметров (загрузка файла, `su`).
+    func call(_ command: String, _ params: [PDAValue], binary: Data, timeout: TimeInterval = 120) async throws -> PDAValue {
+        try await ensureConnected()
+        let id = nextRequestId
+        nextRequestId = nextRequestId >= 0x0FFFFFFF ? 1 : nextRequestId + 1
+        let message = PDAValue.array([.int(id), .string(command)] + params)
+        appendLog(outgoing: true, message.description + " + \(binary.count) байт")
+        let chunkSize = min(131072, max(4096, binary.count / 4))
+        var chunks: [Data] = []
+        var offset = 0
+        while offset < binary.count {
+            let end = min(binary.count, offset + chunkSize)
+            chunks.append(binary.subdata(in: offset..<end))
+            offset = end
+        }
+        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<PDAValue, Error>) in
+            pending[id] = (command, cont)
+            connection?.send(PDACodec.encode(message), binaryChunks: chunks)
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                await self?.fail(requestId: id, with: PDATimeoutError())
+            }
+        }
+    }
+
     /// Сервер просит капчу: ссылка на картинку с числом.
     struct CaptchaRequired: LocalizedError {
         let imageURL: URL?

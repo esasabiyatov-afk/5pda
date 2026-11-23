@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 // MARK: - Модели
@@ -526,5 +527,44 @@ extension PDAAPI {
         return ForumInfo(name: HTMLEntities.decode(d.string(2)), description: HTMLEntities.decode(d.string(3)),
                          subforums: d.int(6), topics: d.int(7), posts: d.int(8),
                          moderators: d.array(9).map { (id: $0.int(0), nick: HTMLEntities.decode($0.string(1)), group: $0.int(2)) })
+    }
+
+    struct UploadError: LocalizedError {
+        let code: Int
+        var errorDescription: String? {
+            switch code {
+            case 5: return "Файл слишком большой"
+            case 6: return "Такой тип файла нельзя загрузить"
+            default: return "Ошибка загрузки файла (код \(code))"
+            }
+        }
+    }
+
+    /// Загрузка вложения. Сначала `fu` [имя, размер, MD5] — если файл уже есть на
+    /// сервере, сразу приходит id. Иначе (код 4) — `su` с ключом: узнаём смещение,
+    /// отправляем данные двоичным хвостом и завершаем `su` [ключ, "fu", имя, размер, MD5].
+    static func uploadAttachment(name: String, data: Data) async throws -> Int {
+        let md5 = Insecure.MD5.hash(data: data).map { String(format: "%02X", $0) }.joined()
+        let meta: [PDAValue] = [.string(name), .int(data.count), .string(md5)]
+        do {
+            return try await PDAClient.shared.call("fu", meta).int(0)
+        } catch let e as PDAServerError where e.code == 4 {
+            // нужно загрузить
+        } catch let e as PDAServerError {
+            throw UploadError(code: e.code)
+        }
+        let key = "att-\(PDAClient.shared.memberId)-\(Int.random(in: 100000...999999999))"
+        var uploaded = try await PDAClient.shared.call("su", [.string(key)]).int(0)
+        var attempts = 0
+        while uploaded < data.count, attempts < 5 {
+            attempts += 1
+            let rest = data.subdata(in: max(0, uploaded)..<data.count)
+            uploaded = try await PDAClient.shared.call("su", [.string(key)], binary: rest).int(0)
+        }
+        do {
+            return try await PDAClient.shared.call("su", [.string(key), "fu"] + meta).int(0)
+        } catch let e as PDAServerError {
+            throw UploadError(code: e.code)
+        }
     }
 }

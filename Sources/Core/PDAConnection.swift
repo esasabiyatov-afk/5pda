@@ -93,6 +93,23 @@ final class PDAConnection {
         }
     }
 
+    /// Сообщение с двоичным хвостом (загрузка вложений): текстовый кадр без FIN,
+    /// затем кадры-продолжения с данными, каждый сжат отдельно; FIN — на последнем.
+    func send(_ payload: Data, binaryChunks: [Data]) {
+        var frames = [WebSocketFramer.encode(opcode: .text, payload: payload, compress: true, fin: binaryChunks.isEmpty)]
+        for (i, chunk) in binaryChunks.enumerated() {
+            frames.append(WebSocketFramer.encode(opcode: .continuation, payload: chunk, compress: true,
+                                                 fin: i == binaryChunks.count - 1))
+        }
+        queue.async {
+            for frame in frames {
+                self.connection?.send(content: frame, completion: .contentProcessed { [weak self] error in
+                    if let error = error { self?.handleClose(error) }
+                })
+            }
+        }
+    }
+
     func send(_ payload: Data) {
         let frame = WebSocketFramer.encode(opcode: .text, payload: payload, compress: true)
         queue.async {

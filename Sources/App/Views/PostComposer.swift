@@ -1,5 +1,7 @@
 import SwiftUI
 import UIKit
+import PhotosUI
+import UniformTypeIdentifiers
 
 /// Что редактируем: новый пост или правку.
 struct ComposerState: Identifiable {
@@ -24,6 +26,7 @@ struct PostComposer: View {
     @State private var askMerge = false
     @State private var preview = false
     @StateObject private var editor = BBEditorController()
+    @StateObject private var attach = AttachmentUploader()
     @AppStorage("tags_below") private var tagsBelow = false
 
     init(state: ComposerState, onFinish: @escaping (PDAAPI.SentPost?) -> Void) {
@@ -43,6 +46,7 @@ struct PostComposer: View {
                     BBTextView(text: $text, controller: editor)
                 }
                 if tagsBelow { Divider(); BBToolbar(controller: editor) }
+                AttachmentBar(uploader: attach, editor: editor)
                 if state.postId != 0 {
                     Divider()
                     TextField("Причина редактирования", text: $reason)
@@ -89,6 +93,7 @@ struct PostComposer: View {
         error = nil
         do {
             let sent = try await PDAAPI.sendPost(topicId: state.topicId, postId: state.postId, text: text,
+                                                 attachments: attach.items.compactMap(\.id),
                                                  editReason: state.postId != 0 ? reason : nil, flags: flags)
             onFinish(sent)
         } catch is PDAAPI.MergeQuestion {
@@ -285,6 +290,83 @@ struct SmilePicker: View {
                 }
             }
             .padding()
+        }
+    }
+}
+
+/// Загрузка вложений для поста/сообщения.
+@MainActor
+final class AttachmentUploader: ObservableObject {
+    struct Item: Identifiable {
+        let localId = UUID()
+        var id: Int?
+        let name: String
+        var failed: String?
+        var identity: UUID { localId }
+    }
+    @Published var items: [Item] = []
+
+    func upload(name: String, data: Data, editor: BBEditorController) {
+        let item = Item(id: nil, name: name)
+        items.append(item)
+        Task {
+            do {
+                let id = try await PDAAPI.uploadAttachment(name: name, data: data)
+                if let i = items.firstIndex(where: { $0.localId == item.localId }) { items[i].id = id }
+                editor.insert("[attachment=\"\(id):\(name)\"]")
+            } catch {
+                if let i = items.firstIndex(where: { $0.localId == item.localId }) { items[i].failed = error.localizedDescription }
+            }
+        }
+    }
+}
+
+struct AttachmentBar: View {
+    @ObservedObject var uploader: AttachmentUploader
+    let editor: BBEditorController
+    @State private var photo: PhotosPickerItem?
+    @State private var importing = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            PhotosPicker(selection: $photo, matching: .images) {
+                Image(systemName: "photo.badge.plus").font(.title3)
+            }
+            Button { importing = true } label: { Image(systemName: "paperclip").font(.title3) }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(uploader.items, id: \.localId) { item in
+                        HStack(spacing: 4) {
+                            if item.id == nil && item.failed == nil { ProgressView().scaleEffect(0.7) }
+                            if item.failed != nil { Image(systemName: "exclamationmark.triangle").foregroundStyle(.red) }
+                            Text(item.name).font(.caption).lineLimit(1)
+                        }
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Color.secondary.opacity(0.12), in: Capsule())
+                        .help(item.failed ?? "")
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .onChange(of: photo) { item in
+            guard let item = item else { return }
+            Task {
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    let jpeg = UIImage(data: data)?.jpegData(compressionQuality: 0.9) ?? data
+                    let name = "IMG_\(Int(Date().timeIntervalSince1970)).jpg"
+                    uploader.upload(name: name, data: jpeg, editor: editor)
+                }
+                photo = nil
+            }
+        }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.item]) { result in
+            guard case .success(let url) = result else { return }
+            let ok = url.startAccessingSecurityScopedResource()
+            defer { if ok { url.stopAccessingSecurityScopedResource() } }
+            if let data = try? Data(contentsOf: url) {
+                uploader.upload(name: url.lastPathComponent, data: data, editor: editor)
+            }
         }
     }
 }
