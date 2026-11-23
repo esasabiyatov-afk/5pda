@@ -129,6 +129,18 @@ class Conn:
         out, self.buf = self.buf[:n], self.buf[n:]
         return out
 
+    def pump(self, seconds):
+        end = time.time() + seconds
+        while time.time() < end:
+            self.s.settimeout(max(0.5, end - time.time()))
+            try:
+                self.recv_msg()
+            except (socket.timeout, TimeoutError):
+                break
+            except ssl.SSLError:
+                break
+        self.s.settimeout(20)
+
     def recv_msg(self):
         while True:
             b0, b1 = self._read(2)
@@ -192,6 +204,36 @@ class Client:
             self.log(f"(посторонний ответ: {str(msg)[:200]})")
         raise TimeoutError(cmd)
 
+def wait_captcha(cl, url, attempt):
+    """Публикует картинку капчи и ждёт ответ в файле captcha/answer.txt ветки
+    (строка «<run_id>-<попытка> <число>»). Соединение всё это время открыто."""
+    import subprocess
+    run_id = os.environ.get("GITHUB_RUN_ID", "local")
+    tag = f"{run_id}-{attempt}"
+    try:
+        img = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"}), timeout=20).read()
+        open("captcha.png", "wb").write(img)
+        subprocess.run(["gh", "release", "upload", "probe", "captcha.png", "--clobber"], check=True)
+        open("captcha.txt", "w").write(tag + "\n")
+        subprocess.run(["gh", "release", "upload", "probe", "captcha.txt", "--clobber"], check=True)
+        cl.log(f"капча опубликована, жду ответ {tag}")
+    except Exception as e:
+        cl.log(f"не удалось опубликовать капчу: {e}")
+        return None
+    branch = os.environ.get("GITHUB_REF_NAME", "")
+    deadline = time.time() + 25 * 60
+    while time.time() < deadline:
+        cl.c.pump(15)  # отвечаем на ping сервера, чтобы соединение не закрылось
+        r = subprocess.run(["git", "fetch", "-q", "origin", branch], capture_output=True)
+        if r.returncode != 0: continue
+        r = subprocess.run(["git", "show", "FETCH_HEAD:captcha/answer.txt"], capture_output=True, text=True)
+        for line in r.stdout.splitlines():
+            parts = line.split()
+            if len(parts) == 2 and parts[0] == tag and parts[1].isdigit():
+                cl.log(f"получен ответ на капчу")
+                return int(parts[1])
+    return None
+
 def main():
     out_dir = sys.argv[1] if len(sys.argv) > 1 else "probe"
     os.makedirs(out_dir, exist_ok=True)
@@ -219,11 +261,20 @@ def main():
     login, pw = os.environ.get("PDA_LOGIN"), os.environ.get("PDA_PASSWORD")
     me = 0
     if login and pw:
-        d = run("login", "ml", [login, pw, 1, 0])
-        if d: me = d[0]; cl.log(f"вход выполнен, id {me}")
-        # не сохраняем ключ входа в результаты
-        p = os.path.join(out_dir, f"{n[0]:02d}-ml-login.txt")
-        if os.path.exists(p): open(p, "w").write("(скрыто)\n")
+        captcha = 0
+        for attempt in range(4):
+            r = cl.call("ml", [login, pw, 1, captcha])
+            code = r[1] if len(r) > 1 else -1
+            if code == 0:
+                me = r[2]; cl.log(f"вход выполнен, id {me}"); break
+            if code != 4:
+                cl.log(f"вход не удался, код {code}"); break
+            url = r[2] if len(r) > 2 else ""
+            if url.startswith("//"): url = "https:" + url
+            cl.log(f"нужна капча: {url}")
+            captcha = wait_captcha(cl, url, attempt)
+            if captcha is None:
+                cl.log("ответ на капчу не получен"); break
 
     news = run("news", "sl", [0, 30, -1, 0])
     for cat in (1, 2, 3, 4):

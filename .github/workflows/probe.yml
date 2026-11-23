@@ -15,8 +15,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run probe
+      - name: Ensure release exists
         env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release view probe >/dev/null 2>&1 || gh release create probe --prerelease --latest=false --title "Probe results" --notes "Служебные результаты проверки" --target "$GITHUB_SHA"
+      - name: Run probe
+        timeout-minutes: 40
+        env:
+          GH_TOKEN: ${{ github.token }}
           PDA_LOGIN: ${{ secrets.PDA_LOGIN }}
           PDA_PASSWORD: ${{ secrets.PDA_PASSWORD }}
         run: |
