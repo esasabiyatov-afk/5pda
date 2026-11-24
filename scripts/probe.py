@@ -258,6 +258,15 @@ def main():
         results[name] = data
         return data if code == 0 else None
 
+    # Быстрый режим: найти тему по названию и сохранить шапку (без входа).
+    q = os.environ.get("PROBE_TOPIC_SEARCH")
+    if q:
+        d = run("search-topic", "rc", [131072 | 2, [], [], [], q, 0, 20])
+        if d and d[1]:
+            tid = d[1][0][1]
+            run(f"topic-{tid}", "fr", [tid, 0, 20, 0])
+        cl.log("готово")
+        return
     login, pw = os.environ.get("PDA_LOGIN"), os.environ.get("PDA_PASSWORD")
     me = 0
     if login and pw:
