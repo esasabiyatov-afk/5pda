@@ -48,45 +48,53 @@ jobs:
       - name: Build
         run: |
           set -o pipefail
-          xcodebuild \
-            -project FivePDA.xcodeproj \
-            -scheme FivePDA \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath build \
-            MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            build > xcodebuild.log 2>&1 || { grep -E 'error:' xcodebuild.log | sort -u | head -100; exit 1; }
-          grep -E 'BUILD SUCCEEDED' xcodebuild.log
-          test -f build/Build/Products/Release-iphoneos/FivePDA.app/FivePDA
-          test -f build/Build/Products/Release-iphoneos/FivePDA.app/Info.plist
+          for scheme in FivePDA FivePDAX; do
+            xcodebuild \
+              -project FivePDA.xcodeproj \
+              -scheme $scheme \
+              -configuration Release \
+              -sdk iphoneos \
+              -destination 'generic/platform=iOS' \
+              -derivedDataPath build \
+              MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+              build > xcodebuild-$scheme.log 2>&1 || { grep -E 'error:' xcodebuild-$scheme.log | sort -u | head -100; exit 1; }
+            grep -E 'BUILD SUCCEEDED' xcodebuild-$scheme.log
+            test -f build/Build/Products/Release-iphoneos/$scheme.app/$scheme
+            test -f build/Build/Products/Release-iphoneos/$scheme.app/Info.plist
+          done
 
       - name: Show errors
         if: failure()
-        run: grep -E 'error:' xcodebuild.log | sort -u | head -100 || true
+        run: grep -hE 'error:' xcodebuild-*.log | sort -u | head -100 || true
 
       - name: Package IPA
         run: |
-          mkdir -p Payload
-          cp -R build/Build/Products/Release-iphoneos/FivePDA.app Payload/
-          zip -qry "5PDA.ipa" Payload
-          ls -la 5PDA.ipa
-          test $(stat -f%z 5PDA.ipa) -gt 100000
+          for pair in "FivePDA:5PDA.ipa" "FivePDAX:5PDA-X.ipa"; do
+            scheme=${pair%%:*}; ipa=${pair##*:}
+            rm -rf Payload && mkdir -p Payload
+            cp -R build/Build/Products/Release-iphoneos/$scheme.app Payload/
+            zip -qry "$ipa" Payload
+            ls -la "$ipa"
+            test $(stat -f%z "$ipa") -gt 100000
+          done
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
           name: 5PDA-${{ env.APP_VERSION }}
-          path: 5PDA.ipa
+          path: |
+            5PDA.ipa
+            5PDA-X.ipa
           if-no-files-found: error
 
       - name: Generate SideStore source
         env:
           RELEASE_NOTES: ${{ github.event.head_commit.message }}
         run: |
-          python3 scripts/make_source.py "$GITHUB_REPOSITORY" "v$APP_VERSION" 5PDA.ipa "$APP_VERSION" "$BUILD_NUMBER"
+          python3 scripts/make_source.py "$GITHUB_REPOSITORY" "v$APP_VERSION" 5PDA.ipa "$APP_VERSION" "$BUILD_NUMBER" 5PDA-X.ipa
           cp docs/icon.png icon.png
+          cp Resources/Assets.xcassets/AppIconX.appiconset/icon-1024.png icon-x.png
           python3 -c "import json;print(json.load(open('source.json'))['apps'][0]['versions'][0]['localizedDescription'])" > release_notes.txt
 
       - name: Publish release
@@ -99,8 +107,10 @@ jobs:
           make_latest: true
           files: |
             5PDA.ipa
+            5PDA-X.ipa
             source.json
             icon.png
+            icon-x.png
 
       - name: Summary
         run: |
