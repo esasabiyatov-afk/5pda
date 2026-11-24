@@ -23,7 +23,7 @@ struct NewsListView: View {
                             .listRowBackground(Color(uiColor: .systemBackground))
                             .padding(.bottom, 2)
                             .onAppear {
-                                if item.id == items.last?.id { Task { await loadMore() } }
+                                if let i = items.firstIndex(of: item), i >= items.count - 8 { Task { await loadMore() } }
                             }
                     }
                     if loading && !items.isEmpty {
@@ -71,7 +71,9 @@ struct NewsListView: View {
         error = nil
         reachedEnd = false
         do {
-            items = try await PDAAPI.news(category: category?.tid ?? 0)
+            let list = try await PDAAPI.news(category: category?.tid ?? 0)
+            await ImageLoader.shared.prefetch(list.prefix(8).compactMap(\.imageURL), timeout: 2)
+            items = list
             reachedEnd = items.count < 30
         } catch {
             self.error = error.localizedDescription
@@ -84,6 +86,7 @@ struct NewsListView: View {
         defer { loading = false }
         do {
             let more = try await PDAAPI.news(offset: items.count, category: category?.tid ?? 0)
+            await ImageLoader.shared.prefetch(more.compactMap(\.imageURL), timeout: 3)
             let known = Set(items.map(\.id))
             items += more.filter { !known.contains($0.id) }
             reachedEnd = more.count < 30

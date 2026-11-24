@@ -90,7 +90,8 @@ struct TopicView: View {
                                 .contextMenu { postMenu(post, page: page) }
                                 .onAppear {
                                     visibleIndex = number(at: index)
-                                    if index >= posts.count - 3 { Task { await loadMore() } }
+                                    // Следующая страница грузится заранее, пока до конца ещё далеко.
+                                    if index >= posts.count - 10 { Task { await loadMore() } }
                                 }
                         }
                         if endOffset < total {
@@ -137,6 +138,15 @@ struct TopicView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) { topicMenu }
+            // «Написать пост» — отдельно от переключателя страниц, чтобы не промахнуться.
+            if page?.canReply == true, client.isLoggedIn {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { if let p = page { composer = ComposerState(topicId: topicId, title: "Ответ: \(p.title)") } } label: {
+                        Image(systemName: "square.and.pencil")
+                    }
+                    .accessibilityLabel("Написать пост")
+                }
+            }
         }
         .sheet(item: $composer) { state in
             PostComposer(state: state) { sent in
@@ -234,11 +244,6 @@ struct TopicView: View {
         }
         .font(.footnote.monospacedDigit())
         Spacer()
-        if page?.canReply == true, client.isLoggedIn {
-            Button { if let p = page { composer = ComposerState(topicId: topicId, title: "Ответ: \(p.title)") } } label: {
-                Image(systemName: "square.and.pencil")
-            }
-        }
         Button { Task { await load(currentPage * perPage) } } label: { Image(systemName: "chevron.forward") }
             .disabled(currentPage >= pageCount)
         Button { Task { await load((pageCount - 1) * perPage) } } label: { Image(systemName: "chevron.forward.2") }
@@ -352,6 +357,7 @@ struct TopicView: View {
         let start = max(0, (newOffset / perPage) * perPage)
         do {
             let p = try await PDAAPI.topic(id: topicId, offset: start)
+            await prefetchImages(p.posts, timeout: 3)
             page = p
             posts = p.posts
             startOffset = start
@@ -365,6 +371,16 @@ struct TopicView: View {
         }
     }
 
+    /// Картинки и аватары страницы загружаются до показа, чтобы она не «дорисовывалась».
+    private func prefetchImages(_ posts: [Post], timeout: TimeInterval) async {
+        var urls: [URL] = []
+        for p in posts {
+            if let a = PDAAPI.absoluteURL(p.avatar) { urls.append(a) }
+            urls += ImageLoader.imageURLs(bb: p.bodyBB, attachments: p.attachments)
+        }
+        await ImageLoader.shared.prefetch(urls, timeout: timeout)
+    }
+
     /// Подгружает следующую страницу в конец списка.
     private func loadMore() async {
         guard !loadingMore, !loading, page != nil, endOffset < total else { return }
@@ -372,6 +388,7 @@ struct TopicView: View {
         defer { loadingMore = false }
         do {
             let p = try await PDAAPI.topic(id: topicId, offset: endOffset)
+            await prefetchImages(p.posts, timeout: 4)
             let known = Set(posts.map(\.id))
             let add = p.posts.filter { !known.contains($0.id) }
             page = p
@@ -394,6 +411,7 @@ struct TopicView: View {
         let start = max(0, startOffset - perPage)
         do {
             let p = try await PDAAPI.topic(id: topicId, offset: start)
+            await prefetchImages(p.posts, timeout: 3)
             let known = Set(posts.map(\.id))
             let add = p.posts.filter { !known.contains($0.id) }
             let anchor = posts.first?.id

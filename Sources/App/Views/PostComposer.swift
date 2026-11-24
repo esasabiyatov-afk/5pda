@@ -63,18 +63,19 @@ struct PostComposer: View {
                     Button("Отмена") { onFinish(nil) }
                 }
                 ToolbarItem(placement: .principal) {
-                    Picker("", selection: $preview) {
-                        Text("Текст").tag(false)
-                        Text("Просмотр").tag(true)
+                    // Как в Android: «глаз» — предпросмотр, без широкого переключателя,
+                    // который на узких экранах налезал на кнопки.
+                    Button { preview.toggle() } label: {
+                        Image(systemName: preview ? "pencil" : "eye")
                     }
-                    .pickerStyle(.segmented)
-                    .frame(width: 180)
+                    .accessibilityLabel(preview ? "Редактировать" : "Предпросмотр")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if sending {
                         ProgressView()
                     } else {
-                        Button("Отправить") { Task { await send(flags: 0) } }
+                        Button { Task { await send(flags: 0) } } label: { Image(systemName: "paperplane.fill") }
+                            .accessibilityLabel("Отправить")
                             .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }

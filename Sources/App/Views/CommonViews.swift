@@ -35,7 +35,7 @@ struct BBContentView: View {
     let blocks: [BBBlock]
 
     init(_ source: String, attachments: [Attachment] = []) {
-        self.blocks = BBParser(attachments: attachments).parse(source)
+        self.blocks = BBParseCache.blocks(source, attachments: attachments)
     }
 
     init(blocks: [BBBlock]) {
@@ -205,4 +205,26 @@ extension Date {
     private static let fullFormatter: DateFormatter = {
         let f = DateFormatter(); f.locale = Locale(identifier: "ru_RU"); f.dateFormat = "d.MM.yy, H:mm"; return f
     }()
+}
+
+/// Кэш разобранной BB-разметки: при прокрутке SwiftUI пересоздаёт представления,
+/// и без кэша текст постов разбирался заново каждый раз.
+enum BBParseCache {
+    private static var cache: [String: [BBBlock]] = [:]
+    private static var order: [String] = []
+    private static let lock = NSLock()
+
+    static func blocks(_ source: String, attachments: [Attachment]) -> [BBBlock] {
+        let key = source + "\u{1}" + attachments.map { "\($0.id)" }.joined(separator: ",")
+        lock.lock()
+        if let b = cache[key] { lock.unlock(); return b }
+        lock.unlock()
+        let b = BBParser(attachments: attachments).parse(source)
+        lock.lock()
+        cache[key] = b
+        order.append(key)
+        if order.count > 400 { cache[order.removeFirst()] = nil }
+        lock.unlock()
+        return b
+    }
 }

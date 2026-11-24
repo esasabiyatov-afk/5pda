@@ -26,6 +26,38 @@ final class ImageLoader: @unchecked Sendable {
 
     func cached(_ url: URL) -> UIImage? { cache.object(forKey: url as NSURL) }
 
+    /// Загружает картинки заранее, но ждёт не дольше `timeout` — чтобы страница
+    /// появлялась уже с картинками, а не «дорисовывалась» на глазах.
+    func prefetch(_ urls: [URL], timeout: TimeInterval = 3) async {
+        let unique = Array(Set(urls)).filter { cached($0) == nil }
+        guard !unique.isEmpty else { return }
+        // Загрузки идут в отдельных задачах (их не прерываем — всё попадёт в кэш),
+        // а здесь ждём, пока закончатся все или выйдет время.
+        final class Counter: @unchecked Sendable {
+            private let lock = NSLock(); private var n = 0
+            func inc() { lock.lock(); n += 1; lock.unlock() }
+            var value: Int { lock.lock(); defer { lock.unlock() }; return n }
+        }
+        let done = Counter()
+        let list = Array(unique.prefix(40))
+        for u in list { Task.detached(priority: .userInitiated) { _ = await self.load(u); done.inc() } }
+        let deadline = Date().addingTimeInterval(timeout)
+        while done.value < list.count, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 80_000_000)
+        }
+    }
+
+    /// Адреса картинок в BB-тексте (img, вложения) и аватары.
+    static func imageURLs(bb: String, attachments: [Attachment]) -> [URL] {
+        var out = attachments.filter(\.isImage).compactMap { PDAAPI.absoluteURL($0.url) }
+        let re = try? NSRegularExpression(pattern: #"\[img[^\]]*\]\s*([^\[\s]+)\s*\[/img\]"#, options: .caseInsensitive)
+        let ns = bb as NSString
+        re?.enumerateMatches(in: bb, range: NSRange(location: 0, length: ns.length)) { m, _, _ in
+            if let m = m, let u = PDAAPI.absoluteURL(ns.substring(with: m.range(at: 1))) { out.append(u) }
+        }
+        return out
+    }
+
     func clear() {
         cache.removeAllObjects()
         session.configuration.urlCache?.removeAllCachedResponses()
@@ -138,6 +170,11 @@ struct AvatarPlaceholder: View {
 /// Картинка в тексте поста: загружается, по нажатию открывается на весь экран.
 struct PostImage: View {
     let url: URL
+
+    init(url: URL) {
+        self.url = url
+        _image = State(initialValue: ImageLoader.shared.cached(url))
+    }
     @Environment(\.multilineTextAlignment) private var textAlignment
     private var frameAlignment: Alignment {
         textAlignment == .center ? .center : textAlignment == .trailing ? .trailing : .leading
