@@ -100,10 +100,25 @@ struct BBParser {
         var current = AttributedString()
         var styles: [(String, Style)] = [("", Style())]
 
+        /// Убирает переносы строк по краям: после [spoiler], [list], перед [/quote] и т.п.
+        /// в BB обычно стоит перевод строки, Android-клиент его не показывает.
+        func trimNewlines(_ a: inout AttributedString) {
+            while let f = a.characters.first, f == "\n" || f == "\r" { a.removeSubrange(a.startIndex..<a.index(afterCharacter: a.startIndex)) }
+            while let l = a.characters.last, l == "\n" || l == "\r" || l == " " {
+                a.removeSubrange(a.index(beforeCharacter: a.endIndex)..<a.endIndex)
+            }
+        }
         func flushText() {
+            trimNewlines(&current)
             let trimmed = String(current.characters).trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { blocks.append(.text(current)) }
             current = AttributedString()
+        }
+        /// Перед новым пунктом списка — ровно один перенос.
+        func dropTrailingNewlines() {
+            while let l = current.characters.last, l == "\n" || l == "\r" || l == " " {
+                current.removeSubrange(current.index(beforeCharacter: current.endIndex)..<current.endIndex)
+            }
         }
         func append(_ s: String) {
             var a = AttributedString(HTMLEntities.decode(s))
@@ -166,7 +181,8 @@ struct BBParser {
                 case "break":
                     append("\n"); continue
                 case "*":
-                    append("\n• "); continue
+                    dropTrailingNewlines()
+                    append(current.characters.isEmpty ? "• " : "\n• "); continue
                 case "snapback":
                     let pid = Self.collectText(&tokens, until: "snapback").trimmingCharacters(in: .whitespaces)
                     if let id = Int(pid) {
