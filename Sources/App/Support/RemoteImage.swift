@@ -188,10 +188,16 @@ struct PostImage: View {
     var body: some View {
         Group {
             if let image = image {
+                // Ширина — не больше собственной, высота строго по пропорциям:
+                // иначе в спойлере картинка растягивалась по высоте с пустотой вокруг.
+                let ratio = image.size.width / max(image.size.height, 1)
+                let maxW = min(image.size.width, 420 * ratio)
                 Image(uiImage: image)
                     .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: min(image.size.width, .infinity), maxHeight: 420)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: maxW)
+                    .aspectRatio(ratio, contentMode: .fit)
+                    .fixedSize(horizontal: false, vertical: true)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .onTapGesture { fullscreen = true }
             } else if !loadImages && !manual {
@@ -226,22 +232,32 @@ struct PostImage: View {
     }
 }
 
-/// Полноэкранный просмотр с масштабированием.
+/// Полноэкранный просмотр с масштабированием: по центру, вписан в экран,
+/// по возможности — оригинал вместо уменьшенного превью.
 struct ImageViewer: View {
     let image: UIImage
     let url: URL
     @Environment(\.dismiss) private var dismiss
+    @State private var shown: UIImage?
     @State private var scale: CGFloat = 1
     @State private var lastScale: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
 
+    /// Превью вложений 4PDA: /static/c/ir500x500/att-…; оригинал — /static/c/img/att-…
+    private var fullURL: URL? {
+        let s = url.absoluteString
+        guard let r = s.range(of: #"/c/ir\d+x\d+/"#, options: .regularExpression) else { return nil }
+        return URL(string: s.replacingCharacters(in: r, with: "/c/img/"))
+    }
+
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Color.black.ignoresSafeArea()
-            Image(uiImage: image)
+        let current = shown ?? image
+        GeometryReader { geo in
+            Image(uiImage: current)
                 .resizable()
-                .scaledToFit()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: geo.size.width, height: geo.size.height)
                 .scaleEffect(scale)
                 .offset(offset)
                 .gesture(
@@ -269,8 +285,11 @@ struct ImageViewer: View {
                         lastScale = scale; lastOffset = offset
                     }
                 }
+        }
+        .background(Color.black.ignoresSafeArea())
+        .overlay(alignment: .topTrailing) {
             HStack(spacing: 16) {
-                ShareLink(item: Image(uiImage: image), preview: SharePreview(url.lastPathComponent, image: Image(uiImage: image))) {
+                ShareLink(item: Image(uiImage: current), preview: SharePreview(url.lastPathComponent, image: Image(uiImage: current))) {
                     Image(systemName: "square.and.arrow.up")
                 }
                 Button { dismiss() } label: { Image(systemName: "xmark") }
@@ -280,6 +299,11 @@ struct ImageViewer: View {
             .padding(12)
             .background(.ultraThinMaterial, in: Capsule())
             .padding()
+        }
+        .task {
+            if let f = fullURL, let big = await ImageLoader.shared.load(f), big.size.width > image.size.width {
+                shown = big
+            }
         }
     }
 }
