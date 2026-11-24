@@ -6,6 +6,9 @@ on:
       routes:
         description: "Экраны через пробел"
         default: "tab:home tab:site article:463599 tab:forum forum:140 topic:1129821 topic:117396 profile:7288972 settings"
+      login:
+        description: "Войти тестовым аккаунтом (результат шифруется)"
+        default: "false"
 
 permissions:
   contents: write
@@ -35,16 +38,32 @@ jobs:
           xcrun simctl boot "$UDID"
           xcrun simctl bootstatus "$UDID" -b
           xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/FivePDA.app
+      - name: Login
+        if: github.event.inputs.login == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PDA_LOGIN: ${{ secrets.PDA_LOGIN }}
+          PDA_PASSWORD: ${{ secrets.PDA_PASSWORD }}
+        run: |
+          gh release view probe >/dev/null 2>&1 || gh release create probe --prerelease --latest=false --title "Probe results" --notes "-" --target "$GITHUB_SHA"
+          python3 scripts/login_key.py "$RUNNER_TEMP/login.txt"
+          echo "::add-mask::$(cat $RUNNER_TEMP/login.txt)"
       - name: Screenshots
         env:
           ROUTES: ${{ github.event.inputs.routes }}
         run: |
           mkdir -p shots
+          LOGIN_ARG=$(cat "$RUNNER_TEMP/login.txt" 2>/dev/null || true)
+          [ -n "$LOGIN_ARG" ] && echo "::add-mask::$LOGIN_ARG"
           i=0
           for r in $ROUTES; do
             i=$((i+1))
             xcrun simctl terminate "$UDID" com.fivepda.client >/dev/null 2>&1 || true
-            xcrun simctl launch "$UDID" com.fivepda.client -screenshotRoute "$r" >/dev/null
+            if [ -n "${LOGIN_ARG:-}" ]; then
+              xcrun simctl launch "$UDID" com.fivepda.client -screenshotRoute "$r" -screenshotLogin "$LOGIN_ARG" >/dev/null
+            else
+              xcrun simctl launch "$UDID" com.fivepda.client -screenshotRoute "$r" >/dev/null
+            fi
             sleep 20
             name=$(printf "%02d-%s" $i "$(echo $r | tr ':' '-')")
             xcrun simctl io "$UDID" screenshot "shots/$name.png" >/dev/null 2>&1
@@ -58,4 +77,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release view screens >/dev/null 2>&1 || gh release create screens --prerelease --latest=false --title "Simulator screenshots" --notes "Служебные скриншоты" --target "$GITHUB_SHA"
-          gh release upload screens shots.zip --clobber
+          if [ -f "$RUNNER_TEMP/login.txt" ]; then
+            # С входом в аккаунт на скриншотах личные данные — шифруем.
+            openssl rand -out key.bin 32
+            openssl enc -aes-256-cbc -pbkdf2 -salt -in shots.zip -out shots.zip.enc -pass file:key.bin
+            openssl pkeyutl -encrypt -pubin -inkey scripts/probe.pub -pkeyopt rsa_padding_mode:oaep -in key.bin -out shots.key.enc
+            gh release upload screens shots.zip.enc shots.key.enc --clobber
+          else
+            gh release upload screens shots.zip --clobber
+          fi

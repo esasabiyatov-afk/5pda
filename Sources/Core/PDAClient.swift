@@ -140,6 +140,16 @@ final class PDAClient: ObservableObject {
         KeychainStore.set(key, for: "login_key")
     }
 
+    /// Вход по уже полученному ключу (для автоматических скриншотов в симуляторе).
+    func useLoginKey(memberId id: Int, key: String) {
+        memberId = id
+        memberName = "id\(id)"
+        defaults.set(id, forKey: "member_id")
+        defaults.set(memberName, forKey: "member_name")
+        KeychainStore.set(key, for: "login_key")
+        reconnect()
+    }
+
     func logout() {
         memberId = 0
         memberName = ""

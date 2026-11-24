@@ -180,6 +180,11 @@ struct HomeView: View {
 enum ScreenshotRoute {
     @MainActor static func apply(router: Router, tabs: TabSelection) {
         guard let raw = UserDefaults.standard.string(forKey: "screenshotRoute"), !raw.isEmpty else { return }
+        // Вход по готовому ключу (только для автоматических скриншотов): «id:ключ».
+        if let login = UserDefaults.standard.string(forKey: "screenshotLogin"), let sep = login.firstIndex(of: ":"),
+           let id = Int(login[..<sep]), PDAClient.shared.memberId != id {
+            PDAClient.shared.useLoginKey(memberId: id, key: String(login[login.index(after: sep)...]))
+        }
         // Для отладки в симуляторе: журнал соединения пишется в Documents/log.txt.
         Task { @MainActor in
             let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("log.txt")
