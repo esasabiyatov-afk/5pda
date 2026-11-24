@@ -139,23 +139,40 @@ final class StreamInflater {
         input += [0x00, 0x00, 0xFF, 0xFF]
 
         var output = Data()
-        let chunk = max(expected, 4096)
+        output.reserveCapacity(expected)
+        let chunk = 65536
         var buffer = [UInt8](repeating: 0, count: chunk)
         try input.withUnsafeBufferPointer { src in
             stream.src_ptr = src.baseAddress!
             stream.src_size = src.count
-            repeat {
+            // Декодер Apple может отдавать результат порциями и держать остаток
+            // у себя даже после того, как прочитал весь вход, поэтому вызываем
+            // его, пока не получим ожидаемый размер или он перестанет выдавать данные.
+            var idle = 0
+            while output.count < expected {
                 let status: compression_status = buffer.withUnsafeMutableBufferPointer { dst in
                     stream.dst_ptr = dst.baseAddress!
                     stream.dst_size = dst.count
                     return compression_stream_process(&stream, 0)
                 }
                 let produced = chunk - stream.dst_size
-                if produced > 0 { output.append(contentsOf: buffer[0..<produced]) }
+                if produced > 0 { output.append(contentsOf: buffer[0..<produced]); idle = 0 } else { idle += 1 }
                 if status == COMPRESSION_STATUS_ERROR { throw Deflate.Error.corrupted }
                 if status == COMPRESSION_STATUS_END { break }
-                if produced == 0 && stream.src_size == 0 { break }
-            } while stream.src_size > 0 || stream.dst_size == 0
+                if idle >= 2 { break }
+            }
+            // Дочитываем вход (хвост 00 00 FF FF), чтобы состояние потока было согласовано.
+            while stream.src_size > 0 {
+                let before = stream.src_size
+                _ = buffer.withUnsafeMutableBufferPointer { dst -> compression_status in
+                    stream.dst_ptr = dst.baseAddress!
+                    stream.dst_size = dst.count
+                    return compression_stream_process(&stream, 0)
+                }
+                let produced = chunk - stream.dst_size
+                if produced > 0 { output.append(contentsOf: buffer[0..<produced]) }
+                if stream.src_size == before && produced == 0 { break }
+            }
         }
         if output.count > expected { output = output.prefix(expected) }
         return output
