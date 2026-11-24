@@ -261,9 +261,14 @@ def main():
     # Быстрый режим: найти тему по названию и сохранить шапку (без входа).
     q = os.environ.get("PROBE_TOPIC_SEARCH")
     if q:
-        d = run("search-topic", "rc", [131072 | 2, [], [], [], q, 0, 20])
-        if d and d[1]:
-            tid = d[1][0][1]
+        tid = None
+        for fid in (665, 140):
+            d = run(f"forum-{fid}", "fs", [fid, 0, 30])
+            for t in (d[8] if d and len(d) > 8 else []):
+                if isinstance(t, list) and q.lower() in str(t[1]).lower():
+                    tid = t[0]; break
+            if tid: break
+        if tid:
             run(f"topic-{tid}", "fr", [tid, 0, 20, 0])
         cl.log("готово")
         return
