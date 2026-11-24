@@ -2,6 +2,10 @@ name: Edit 5PDA topic header
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "fix — убрать мусор и добавить скриншоты, icon — добавить иконку"
+        default: "icon"
 
 permissions:
   contents: write
@@ -21,4 +25,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PDA_LOGIN: ${{ secrets.PDA_LOGIN }}
           PDA_PASSWORD: ${{ secrets.PDA_PASSWORD }}
+          MODE: ${{ github.event.inputs.mode }}
         run: python3 scripts/edit_header.py

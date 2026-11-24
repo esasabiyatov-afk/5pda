@@ -63,6 +63,21 @@ if post[0] != POST or post[2] != cl.member_id:
 bb = post[8]
 old_ids = [a[0] for a in (post[11] or [])]
 
+if os.environ.get("MODE") == "icon":
+    # Иконка приложения по центру в начале шапки.
+    if "5pda-icon.png" in bb:
+        sys.exit("иконка уже есть — ничего не меняю")
+    shots_dir = os.path.join(os.path.dirname(__file__), "..", "docs", "screenshots")
+    aid = cl.upload("5pda-icon.png", open(os.path.join(shots_dir, "0-icon.png"), "rb").read())
+    new = f'[center][attachment="{aid}:5pda-icon.png"][/center]\n' + bb
+    try:
+        cl.call("fp", [TOPIC, POST, 0, new, old_ids + [aid], "Иконка приложения"])
+    except ServerError as e:
+        sys.exit(f"ошибка правки: {e} {e.payload}")
+    check = cl.call("fr", [TOPIC, 0, 20, 0])[12][0]
+    print("готово, иконка:", "5pda-icon.png" in check[8], "вложений:", len(check[11] or []), flush=True)
+    sys.exit(0)
+
 junk = re.compile(r"\[spoiler\]\[spoiler\]\[spoiler\]\[code\].*?\[/code\]\[/spoiler\]\[/spoiler\]\[/spoiler\]\n?", re.S)
 found = junk.findall(bb)
 if len(found) != 1 or "&#91;CODE&#93;" not in found[0]:
