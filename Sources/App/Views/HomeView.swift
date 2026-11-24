@@ -213,6 +213,9 @@ enum ScreenshotRoute {
         case "settings": router.push(MoreRoute.settings)
         case "menu": router.push(MoreRoute.more)
         case "search": router.push(MoreRoute.search)
+        case "mentions": router.push(MoreRoute.mentions)
+        case "history": router.push(MoreRoute.history)
+        case "userposts": router.push(MoreRoute.userPosts(id, "Пользователь"))
         default: break
         }
     }
