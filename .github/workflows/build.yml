@@ -12,6 +12,9 @@ on:
       - scripts/android_session.sh
       - .github/workflows/android.yml
       - .github/workflows/screens.yml
+      - mcp/**
+      - scripts/mcp_test.py
+      - .github/workflows/mcp-test.yml
   workflow_dispatch:
 
 concurrency:

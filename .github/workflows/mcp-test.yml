@@ -1,0 +1,44 @@
+name: MCP server test
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - mcp/**
+      - scripts/mcp_test.py
+      - .github/workflows/mcp-test.yml
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install ./mcp
+      - name: Ensure release exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release view probe >/dev/null 2>&1 || gh release create probe --prerelease --latest=false --title "Probe results" --notes "-" --target "$GITHUB_SHA"
+      - name: Run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PDA_LOGIN: ${{ secrets.PDA_LOGIN }}
+          PDA_PASSWORD: ${{ secrets.PDA_PASSWORD }}
+        run: python3 scripts/mcp_test.py mcp_test.txt
+      - name: Publish (encrypted)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -f mcp_test.txt ] || exit 0
+          openssl rand -out key.bin 32
+          openssl enc -aes-256-cbc -pbkdf2 -salt -in mcp_test.txt -out mcp_test.enc -pass file:key.bin
+          openssl pkeyutl -encrypt -pubin -inkey scripts/probe.pub -pkeyopt rsa_padding_mode:oaep -in key.bin -out mcp_test.key.enc
+          gh release upload probe mcp_test.enc mcp_test.key.enc --clobber
