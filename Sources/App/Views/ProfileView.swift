@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct ProfileView: View {
     let route: ProfileRoute
@@ -72,7 +73,9 @@ struct ProfileView: View {
                         Section("Устройства") {
                             ForEach(Array(p.devices.enumerated()), id: \.offset) { _, d in
                                 if let url = URL(string: d.link), !d.link.isEmpty {
-                                    BrowserLink(destination: url) { Text(d.name).fontWeight(d.main ? .bold : .regular) }
+                                    Button {
+                                        if let go = Router.route(for: url) { go(router) } else { UIApplication.shared.open(url) }
+                                    } label: { Text(d.name).fontWeight(d.main ? .bold : .regular) }
                                 } else {
                                     Text(d.name).fontWeight(d.main ? .bold : .regular)
                                 }
@@ -144,6 +147,8 @@ struct MoreView: View {
                 NavigationLink(value: MoreRoute.mentions) { Label("Упоминания", systemImage: "at") }
                 NavigationLink(value: MoreRoute.history) { Label("История", systemImage: "clock") }
                 NavigationLink(value: MoreRoute.search) { Label("Поиск", systemImage: "magnifyingglass") }
+                NavigationLink(value: MoreRoute.devdb) { Label("Каталог устройств", systemImage: "iphone") }
+                NavigationLink(value: MoreRoute.tickets) { Label("Тикеты", systemImage: "ticket") }
             }
             Section {
                 NavigationLink(value: MoreRoute.announcement(0, "Правила форума")) { Label("Правила форума", systemImage: "book") }

@@ -196,6 +196,9 @@ struct TopicView: View {
                 }
                 Button { showSearch = true } label: { Label("Поиск в теме", systemImage: "magnifyingglass") }
                 Button { showInfo = true } label: { Label("О теме", systemImage: "info.circle") }
+                Button { router.push(MoreRoute.modLog(post: false, id: topicId)) } label: {
+                    Label("История темы", systemImage: "clock.arrow.circlepath")
+                }
                 if client.isLoggedIn {
                     Button {
                         let url = "forum/index.php?showtopic=\(topicId)" + (startOffset > 0 ? "&st=\(startOffset)" : "")
@@ -279,6 +282,9 @@ struct TopicView: View {
         }
         Button { router.push(ProfileRoute(id: post.authorId, nick: post.authorName)) } label: {
             Label("Профиль \(post.authorName)", systemImage: "person")
+        }
+        Button { router.push(MoreRoute.modLog(post: true, id: post.id)) } label: {
+            Label("История поста", systemImage: "clock.arrow.circlepath")
         }
         Button { router.push(MoreRoute.userPosts(post.authorId, post.authorName)) } label: {
             Label("Поиск постов \(post.authorName)", systemImage: "magnifyingglass")

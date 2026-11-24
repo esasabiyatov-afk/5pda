@@ -50,6 +50,19 @@ final class Router: ObservableObject {
         }
         // Статьи: /2024/05/12/123456/slug/ или ?p=123456
         let parts = url.path.split(separator: "/").map(String.init)
+        // Каталог устройств: /devdb, /devdb/phones, /devdb/phones/samsung, /devdb/samsung_galaxy_s26
+        if parts.first == "devdb" {
+            let types = Set(PDAAPI.deviceTypes.map(\.id))
+            let route: MoreRoute
+            if parts.count == 1 {
+                route = .devdb
+            } else if parts.count == 2 {
+                route = types.contains(parts[1]) ? .deviceType(parts[1]) : .device(parts[1])
+            } else {
+                route = types.contains(parts[1]) ? .deviceVendor(parts[1], parts[2]) : .device(parts[1] + ":" + parts[2])
+            }
+            return { $0.push(route) }
+        }
         if parts.count >= 4, parts[0].count == 4, Int(parts[0]) != nil, let id = Int(parts[3]) {
             return { $0.push(ArticleRoute(id: id)) }
         }
@@ -65,6 +78,8 @@ enum MoreRoute: Hashable {
     case account, mentions, history, search, log, diagnostics, more, settings
     case userTopics(Int, String), userPosts(Int, String)
     case announcement(Int, String)
+    case devdb, deviceType(String), deviceVendor(String, String), device(String)
+    case tickets, modLog(post: Bool, id: Int)
 }
 
 /// NavigationStack вкладки со своим роутером.

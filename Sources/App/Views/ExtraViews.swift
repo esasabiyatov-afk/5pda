@@ -395,3 +395,226 @@ struct CreateTopicView: View {
         }
     }
 }
+
+// MARK: - Каталог устройств
+
+struct DeviceTypesView: View {
+    var body: some View {
+        List(PDAAPI.deviceTypes) { t in
+            NavigationLink(value: MoreRoute.deviceType(t.id)) { Text(t.title) }
+        }
+        .navigationTitle("Устройства")
+    }
+}
+
+struct DeviceVendorsView: View {
+    let type: String
+    @State private var title = ""
+    @State private var vendors: [PDAAPI.DeviceVendor] = []
+    @State private var error: String?
+    @State private var query = ""
+
+    var body: some View {
+        Group {
+            if let e = error, vendors.isEmpty {
+                ErrorView(message: e) { Task { await load() } }
+            } else if vendors.isEmpty {
+                ProgressView()
+            } else {
+                List(vendors.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }) { v in
+                    NavigationLink(value: MoreRoute.deviceVendor(type, v.id)) {
+                        HStack {
+                            Text(v.name)
+                            Spacer()
+                            Text(verbatim: String(v.count)).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .searchable(text: $query, prompt: "Производитель")
+            }
+        }
+        .navigationTitle(title.isEmpty ? "Производители" : title)
+        .task { if vendors.isEmpty { await load() } }
+    }
+
+    private func load() async {
+        error = nil
+        do { let r = try await PDAAPI.deviceVendors(type: type); title = r.title; vendors = r.vendors }
+        catch { self.error = error.localizedDescription }
+    }
+}
+
+struct VendorDevicesView: View {
+    let type: String
+    let vendor: String
+    @State private var title = ""
+    @State private var devices: [PDAAPI.DeviceSummary] = []
+    @State private var error: String?
+    @State private var query = ""
+
+    var body: some View {
+        Group {
+            if let e = error, devices.isEmpty {
+                ErrorView(message: e) { Task { await load() } }
+            } else if devices.isEmpty {
+                ProgressView()
+            } else {
+                List(devices.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }) { d in
+                    NavigationLink(value: MoreRoute.device(d.id)) {
+                        HStack(alignment: .top, spacing: 12) {
+                            RemoteImage(url: PDAAPI.absoluteURL(d.image)) { Color.secondary.opacity(0.1) }
+                                .frame(width: 64, height: 84)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(d.name).font(.headline)
+                                ForEach(d.specs.filter { !$0.isSection }.prefix(5), id: \.key) { s in
+                                    (Text(s.label + " ").foregroundColor(.secondary) + Text(s.value))
+                                        .font(.caption).lineLimit(1)
+                                }
+                            }
+                        }
+                    }
+                }
+                .listStyle(.plain)
+                .searchable(text: $query, prompt: "Модель")
+            }
+        }
+        .navigationTitle(title.isEmpty ? vendor : title)
+        .navigationBarTitleDisplayMode(.inline)
+        .task { if devices.isEmpty { await load() } }
+    }
+
+    private func load() async {
+        error = nil
+        do { let r = try await PDAAPI.vendorDevices(type: type, vendor: vendor); title = r.title; devices = r.devices }
+        catch { self.error = error.localizedDescription }
+    }
+}
+
+struct DeviceView: View {
+    let slug: String
+    @State private var info: PDAAPI.DeviceInfo?
+    @State private var error: String?
+
+    var body: some View {
+        Group {
+            if let i = info {
+                List {
+                    if !i.images.isEmpty {
+                        TabView {
+                            ForEach(Array(i.images.enumerated()), id: \.offset) { _, img in
+                                if let u = PDAAPI.absoluteURL(img.full.isEmpty ? img.thumb : img.full) {
+                                    PostImage(url: u)
+                                }
+                            }
+                        }
+                        .tabViewStyle(.page)
+                        .frame(height: 300)
+                        .listRowInsets(EdgeInsets())
+                    }
+                    Section {
+                        Text(i.vendorName + " " + i.model).font(.title2.bold())
+                        if !i.subtitle.isEmpty { Text(i.subtitle).foregroundStyle(.secondary) }
+                        if !i.variants.isEmpty {
+                            ForEach(i.variants) { v in
+                                NavigationLink(value: MoreRoute.device(slug.split(separator: ":").first.map(String.init)! + ":" + v.id)) {
+                                    Text(v.name)
+                                }
+                            }
+                        }
+                    }
+                    ForEach(sections(i.specs), id: \.title) { sec in
+                        Section(sec.title) {
+                            ForEach(sec.items, id: \.key) { s in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(s.label).font(.caption).foregroundStyle(.secondary)
+                                    Text(s.value).textSelection(.enabled)
+                                }
+                            }
+                        }
+                    }
+                    Section {
+                        BrowserLink(destination: URL(string: PDAConfig.siteURL.absoluteString + "devdb/" + slug.replacingOccurrences(of: ":", with: "/"))!) {
+                            Label("Открыть на сайте", systemImage: "safari")
+                        }
+                    }
+                }
+            } else if let e = error {
+                ErrorView(message: e) { Task { await load() } }
+            } else {
+                ProgressView()
+            }
+        }
+        .navigationTitle(info?.model ?? "Устройство")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { if info == nil { await load() } }
+    }
+
+    private struct SpecSection { let title: String; var items: [PDAAPI.DeviceSpec] }
+
+    private func sections(_ specs: [PDAAPI.DeviceSpec]) -> [SpecSection] {
+        var out: [SpecSection] = []
+        for s in specs {
+            if s.isSection { out.append(SpecSection(title: s.label, items: [])) }
+            else {
+                if out.isEmpty { out.append(SpecSection(title: "Характеристики", items: [])) }
+                if !s.value.isEmpty { out[out.count - 1].items.append(s) }
+            }
+        }
+        return out.filter { !$0.items.isEmpty }
+    }
+
+    private func load() async {
+        error = nil
+        do { info = try await PDAAPI.device(slug) } catch { self.error = error.localizedDescription }
+    }
+}
+
+// MARK: - Модерация
+
+/// Тикеты и история темы/поста. Формат ответов известен лишь частично (у обычных
+/// пользователей нет доступа), поэтому записи показываются в общем виде.
+struct ModerationView: View {
+    let title: String
+    let load: () async throws -> PDAValue
+    @State private var rows: [String] = []
+    @State private var error: String?
+    @State private var loaded = false
+
+    var body: some View {
+        List {
+            if let e = error {
+                Label(e, systemImage: "lock").foregroundStyle(.secondary)
+            } else if !loaded {
+                ProgressView().frame(maxWidth: .infinity)
+            } else if rows.isEmpty {
+                Text("Пусто").foregroundStyle(.secondary)
+            }
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
+                Text(r).font(.footnote).textSelection(.enabled)
+            }
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            do {
+                let v = try await load()
+                let items = (v.array(1).isEmpty ? v.array(0) : v.array(1))
+                rows = items.map { Self.describe($0) }
+            } catch { self.error = error.localizedDescription }
+            loaded = true
+        }
+    }
+
+    /// Строки записи: тексты и даты (числа вида времени Unix).
+    static func describe(_ v: PDAValue) -> String {
+        guard case .array(let items) = v else { return v.description }
+        return items.compactMap { item -> String? in
+            switch item {
+            case .string(let s): return s.isEmpty ? nil : HTMLEntities.decode(BBParser.plainText(s))
+            case .int(let n) where n > 1_000_000_000 && n < 2_000_000_000:
+                return Date(timeIntervalSince1970: TimeInterval(n)).pdaFormatted
+            default: return nil
+            }
+        }.joined(separator: " · ")
+    }
+}

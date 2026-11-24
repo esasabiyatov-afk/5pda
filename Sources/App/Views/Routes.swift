@@ -34,6 +34,13 @@ extension View {
                 case .more: MoreView()
                 case .settings: SettingsView()
                 case .announcement(let id, let title): AnnouncementView(id: id, title: title)
+                case .devdb: DeviceTypesView()
+                case .deviceType(let t): DeviceVendorsView(type: t)
+                case .deviceVendor(let t, let v): VendorDevicesView(type: t, vendor: v)
+                case .device(let slug): DeviceView(slug: slug)
+                case .tickets: ModerationView(title: "Тикеты") { try await PDAAPI.tickets() }
+                case .modLog(let post, let id):
+                    ModerationView(title: post ? "История поста" : "История темы") { try await PDAAPI.moderationLog(post: post, id: id) }
                 case .userTopics(let id, let nick): UserContentView(userId: id, nick: nick, topics: true)
                 case .userPosts(let id, let nick): UserContentView(userId: id, nick: nick, topics: false)
                 }

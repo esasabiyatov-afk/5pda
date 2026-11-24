@@ -666,4 +666,82 @@ extension PDAAPI {
             }
         }
     }
+
+    // MARK: Каталог устройств (DevDB)
+
+    struct DeviceType: Identifiable, Hashable { let id: String; let title: String }
+    static let deviceTypes: [DeviceType] = [
+        DeviceType(id: "phones", title: "Телефоны"), DeviceType(id: "pad", title: "Планшеты"),
+        DeviceType(id: "ebook", title: "Эл. книги"), DeviceType(id: "smartwatch", title: "Смарт-часы"),
+    ]
+    struct DeviceVariant: Identifiable, Hashable { let id: String; let name: String }
+
+    struct DeviceVendor: Identifiable, Hashable { let id: String; let name: String; let count: Int }
+
+    /// Производители (`dt`): [тип] → [тип, название, [[id, название, устройств, …]]].
+    static func deviceVendors(type: String) async throws -> (title: String, vendors: [DeviceVendor]) {
+        let d = try await PDAClient.shared.call("dt", [.string(type)])
+        return (HTMLEntities.decode(d.string(1)),
+                d.array(2).map { DeviceVendor(id: $0.string(0), name: HTMLEntities.decode($0.string(1)), count: $0.int(2)) })
+    }
+
+    struct DeviceSpec: Hashable { let isSection: Bool; let key: String; let label: String; let value: String }
+    struct DeviceSummary: Identifiable, Hashable {
+        let id: String
+        let name: String
+        let image: String
+        let specs: [DeviceSpec]
+    }
+
+    private static func spec(_ v: PDAValue) -> DeviceSpec {
+        DeviceSpec(isSection: v.int(0) == 0, key: v.string(1), label: HTMLEntities.decode(v.string(2)),
+                   value: HTMLEntities.decode(BBParser.plainText(v.string(4))))
+    }
+
+    /// Устройства производителя (`dv`): [тип, производитель] →
+    /// [тип, название, производитель, название, [[id, модель, картинка, ?, [характеристики]]]].
+    static func vendorDevices(type: String, vendor: String) async throws -> (title: String, devices: [DeviceSummary]) {
+        let d = try await PDAClient.shared.call("dv", [.string(type), .string(vendor)])
+        return (HTMLEntities.decode(d.string(3)),
+                d.array(4).map { DeviceSummary(id: $0.string(0), name: HTMLEntities.decode($0.string(1)),
+                                               image: $0.string(2), specs: $0.array(4).map(spec)) })
+    }
+
+    struct DeviceInfo {
+        let type: String, typeName: String, vendor: String, vendorName: String
+        let model: String, subtitle: String
+        let variants: [DeviceVariant]
+        let images: [(thumb: String, full: String)]
+        let specs: [DeviceSpec]
+    }
+
+    /// Устройство (`de`): ["модель" или "модель:вариант"] → [тип, название типа, производитель,
+    /// название, модель, подзаголовок, [[вариант, название]], [[главная, превью, полное]], [характеристики], моё].
+    static func device(_ slug: String) async throws -> DeviceInfo {
+        let d = try await PDAClient.shared.call("de", [.string(slug)])
+        return DeviceInfo(type: d.string(0), typeName: HTMLEntities.decode(d.string(1)), vendor: d.string(2),
+                          vendorName: HTMLEntities.decode(d.string(3)), model: HTMLEntities.decode(d.string(4)),
+                          subtitle: HTMLEntities.decode(d.string(5)),
+                          variants: d.array(6).map { DeviceVariant(id: $0.string(0), name: HTMLEntities.decode($0.string(1))) },
+                          images: d.array(7).map { (thumb: $0.string(1), full: $0.string(2)) },
+                          specs: d.array(8).map(spec))
+    }
+
+    // MARK: Модерация (доступно модераторам и кураторам)
+
+    struct NoAccess: LocalizedError {
+        var errorDescription: String? { "Нет доступа: раздел доступен только модераторам и кураторам" }
+    }
+
+    /// Тикеты (`tl`): [смещение, на странице, флаги, [форум или тема]]. Обычным пользователям — код 3.
+    static func tickets(offset: Int = 0, forumOrTopic: Int = 0) async throws -> PDAValue {
+        do { return try await PDAClient.shared.call("tl", [.int(offset), 20, 0, .array([.int(forumOrTopic)])]) }
+        catch let e as PDAServerError where e.code == 3 { throw NoAccess() }
+    }
+
+    /// История темы/поста (`fh`): [0 — тема / 1 — пост, id].
+    static func moderationLog(post: Bool, id: Int) async throws -> PDAValue {
+        do { return try await PDAClient.shared.call("fh", [.int(post ? 1 : 0), .int(id)]) }
+        catch let e as PDAServerError where e.code == 3 { throw NoAccess() }
+    }
 }
