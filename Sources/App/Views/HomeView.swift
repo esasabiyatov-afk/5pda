@@ -180,6 +180,15 @@ struct HomeView: View {
 enum ScreenshotRoute {
     @MainActor static func apply(router: Router, tabs: TabSelection) {
         guard let raw = UserDefaults.standard.string(forKey: "screenshotRoute"), !raw.isEmpty else { return }
+        // Для отладки в симуляторе: журнал соединения пишется в Documents/log.txt.
+        Task { @MainActor in
+            let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("log.txt")
+            while true {
+                let text = PDAClient.shared.log.map { ($0.outgoing ? "→ " : "← ") + String($0.text.prefix(3000)) }.joined(separator: "\n")
+                try? text.write(to: url, atomically: true, encoding: .utf8)
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            }
+        }
         let parts = raw.split(separator: ":", maxSplits: 1).map(String.init)
         let arg = parts.count > 1 ? parts[1] : ""
         let id = Int(arg) ?? 0
