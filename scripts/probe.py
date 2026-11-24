@@ -304,6 +304,19 @@ def main():
     run("search-site", "rc", [(3 ^ 3) | 4, [], [], [], "iphone", 0, 20])
     run("profile-1", "mi", [1])
     run("sitemenu", "sm", [0])
+    dt = run("devtypes-phones", "dt", ["phones"])
+    vendor = None
+    if dt and len(dt) > 2 and dt[2]:
+        vendor = dt[2][0]
+        for v in dt[2]:
+            if isinstance(v, list) and len(v) > 1 and "samsung" in str(v[0]).lower():
+                vendor = v
+    if vendor:
+        dv = run("vendor", "dv", ["phones", vendor[0]])
+        if dv and len(dv) > 4 and dv[4]:
+            dev = dv[4][0]
+            run("device", "de", [dev[0] if isinstance(dev, list) else dev])
+    run("modlog-topic", "fh", [0, 1129821])
     if me:
         run("profile-me", "mi", [me])
         run("favorites", "mf", [0, 30, 0])
@@ -311,6 +324,7 @@ def main():
         run("mentions", "mm", [0, 0, 1, 0, 20])
         run("unread", "mn", [0, 0, 0])
         run("bookmarks", "mb", [0, []])
+        run("tickets", "tl", [0, 20, 0, [0]])
         run("reputation", "mr", [me, 0, 0, 200])
         run("user-posts", "rc", [131072 | 1, [], [], [me], "", 0, 20])
     cl.log("готово")
