@@ -213,6 +213,12 @@ enum ScreenshotRoute {
         case "settings": router.push(MoreRoute.settings)
         case "menu": router.push(MoreRoute.more)
         case "search": router.push(MoreRoute.search)
+        case "devdb": router.push(MoreRoute.devdb)
+        case "devtype": router.push(MoreRoute.deviceType(arg))
+        case "vendor":
+            let p = arg.split(separator: "/").map(String.init)
+            if p.count == 2 { router.push(MoreRoute.deviceVendor(p[0], p[1])) }
+        case "device": router.push(MoreRoute.device(arg))
         case "mentions": router.push(MoreRoute.mentions)
         case "history": router.push(MoreRoute.history)
         case "userposts": router.push(MoreRoute.userPosts(id, "Пользователь"))
