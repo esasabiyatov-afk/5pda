@@ -325,6 +325,13 @@ def main():
         run("unread", "mn", [0, 0, 0])
         run("bookmarks", "mb", [0, []])
         run("tickets", "tl", [0, 20, 0, [0]])
+        ios = run("forum-140", "fs", [140, 0, 30])
+        if ios and len(ios) > 6:
+            for sf in ios[6]:
+                if isinstance(sf, list) and "Интернет" in str(sf[1]):
+                    run(f"form-{sf[0]}", "fw", [sf[0], 0, 0])
+        run("form-140", "fw", [140, 0, 0])
+        run("release-form-fon", "fw", [140, 1129821, 0])
         run("reputation", "mr", [me, 0, 0, 200])
         run("user-posts", "rc", [131072 | 1, [], [], [me], "", 0, 20])
     cl.log("готово")
