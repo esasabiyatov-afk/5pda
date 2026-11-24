@@ -17,7 +17,7 @@ struct SearchResultRow: View {
                         Text("· \(p.date.pdaFormatted)").foregroundStyle(.secondary)
                     }
                     .font(.caption)
-                    Text(BBParser.plainText(p.bodyBB)).font(.footnote).lineLimit(5)
+                    Text(BBParser.previewText(p.bodyBB)).font(.footnote).lineLimit(5)
                 }
             }
         case .article(let id, let title):

@@ -270,7 +270,7 @@ struct TopicRow: View {
                         Image(systemName: "person.fill").font(.system(size: 9))
                         Text(topic.lastPoster)
                         if topic.postCount > 0 {
-                            Text("· \(topic.postCount)")
+                            Text(verbatim: "· \(topic.postCount)")
                         }
                     }
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)

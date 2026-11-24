@@ -247,7 +247,7 @@ struct MentionsView: View {
             }
             if let p = m.post {
                 Text("\(p.authorName) · \(p.date.pdaFormatted)").font(.caption).foregroundStyle(.secondary)
-                Text(BBParser.plainText(p.bodyBB)).font(.footnote).lineLimit(4)
+                Text(BBParser.previewText(p.bodyBB)).font(.footnote).lineLimit(4)
             }
         }
     }

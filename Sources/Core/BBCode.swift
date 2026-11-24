@@ -49,11 +49,32 @@ struct BBParser {
     }
 
     static func plainText(_ source: String) -> String {
+        plainText(source, skipQuotes: false)
+    }
+
+    /// Текст для превью: без цитат и номеров постов из [snapback].
+    static func previewText(_ source: String) -> String {
+        plainText(source, skipQuotes: true)
+            .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func plainText(_ source: String, skipQuotes: Bool) -> String {
         var out = ""
+        var skip: String?
+        var depth = 0
         for t in tokenize(stripMarkers(source)) {
+            if let s = skip {
+                if case .open(let n, _) = t.kind, n == s { depth += 1 }
+                if case .close(let n) = t.kind, n == s { if depth == 0 { skip = nil } else { depth -= 1 } }
+                continue
+            }
             switch t.kind {
             case .text(let s): out += HTMLEntities.decode(s)
-            case .open(let n, _): if n == "*" { out += "\n• " } else if n == "break" { out += "\n" }
+            case .open(let n, _):
+                if n == "*" { out += "\n• " } else if n == "break" { out += "\n" }
+                else if n == "snapback" { skip = n; depth = 0; out += "↩ " }
+                else if skipQuotes, n == "quote" { skip = n; depth = 0 }
             case .close: break
             }
         }

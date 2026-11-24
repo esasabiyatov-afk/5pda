@@ -122,6 +122,13 @@ struct TopicView: View {
                     }
                 }
                 .overlay { if loading { ProgressView().padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10)) } }
+                .safeAreaInset(edge: .bottom) {
+                    // Переключатель страниц как в Android-клиенте; над панелью вкладок.
+                    HStack(spacing: 14) { pager }
+                        .padding(.horizontal, 16).padding(.vertical, 8)
+                        .background(.regularMaterial, in: Capsule())
+                        .padding(.bottom, 4)
+                }
             } else {
                 ProgressView()
             }
@@ -130,7 +137,6 @@ struct TopicView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) { topicMenu }
-            ToolbarItemGroup(placement: .bottomBar) { pager }
         }
         .sheet(item: $composer) { state in
             PostComposer(state: state) { sent in
