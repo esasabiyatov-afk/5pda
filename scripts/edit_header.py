@@ -63,6 +63,20 @@ if post[0] != POST or post[2] != cl.member_id:
 bb = post[8]
 old_ids = [a[0] for a in (post[11] or [])]
 
+if os.environ.get("MODE") == "drop-big-icon":
+    # Удалить старую большую иконку из вложений: как в Android — id со знаком минус.
+    big = [a[0] for a in (post[11] or []) if len(a) > 2 and a[2] == "5pda-icon.png"]
+    if len(big) != 1 or "5pda-icon.png" in bb:
+        sys.exit(f"большая иконка во вложениях: {len(big)}, в тексте: {'5pda-icon.png' in bb} — ничего не меняю")
+    ids = [i for i in old_ids if i != big[0]] + [-big[0]]
+    try:
+        cl.call("fp", [TOPIC, POST, 0, bb, ids, "Убрана лишняя картинка"])
+    except ServerError as e:
+        sys.exit(f"ошибка правки: {e} {e.payload}")
+    check = cl.call("fr", [TOPIC, 0, 20, 0])[12][0]
+    print("готово, вложений:", len(check[11] or []), [a[2] for a in (check[11] or [])], flush=True)
+    sys.exit(0)
+
 if os.environ.get("MODE") == "icon-small":
     # Заменить иконку на маленькую (96×96) и убрать старую из вложений.
     m = re.search(r'\[attachment="(\d+):5pda-icon\.png"\]', bb)
