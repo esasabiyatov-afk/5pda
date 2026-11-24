@@ -63,6 +63,24 @@ if post[0] != POST or post[2] != cl.member_id:
 bb = post[8]
 old_ids = [a[0] for a in (post[11] or [])]
 
+if os.environ.get("MODE") == "icon-small":
+    # Заменить иконку на маленькую (96×96) и убрать старую из вложений.
+    m = re.search(r'\[attachment="(\d+):5pda-icon\.png"\]', bb)
+    if not m:
+        sys.exit("большая иконка не найдена — ничего не меняю")
+    old = int(m.group(1))
+    shots_dir = os.path.join(os.path.dirname(__file__), "..", "docs", "screenshots")
+    aid = cl.upload("5pda-icon-96.png", open(os.path.join(shots_dir, "0-icon-96.png"), "rb").read())
+    new = bb.replace(m.group(0), f'[attachment="{aid}:5pda-icon-96.png"]')
+    ids = [i for i in old_ids if i != old] + [aid]
+    try:
+        cl.call("fp", [TOPIC, POST, 0, new, ids, "Иконка меньше"])
+    except ServerError as e:
+        sys.exit(f"ошибка правки: {e} {e.payload}")
+    check = cl.call("fr", [TOPIC, 0, 20, 0])[12][0]
+    print("готово, маленькая иконка:", "5pda-icon-96.png" in check[8], "вложений:", len(check[11] or []), flush=True)
+    sys.exit(0)
+
 if os.environ.get("MODE") == "icon":
     # Иконка приложения по центру в начале шапки.
     if "5pda-icon.png" in bb:
