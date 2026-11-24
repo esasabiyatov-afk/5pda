@@ -1,5 +1,7 @@
 import SwiftUI
 import UIKit
+import UserNotifications
+import BackgroundTasks
 
 /// Счётчики непрочитанного (QMS, избранное, упоминания) — обновляются, пока приложение открыто.
 @MainActor
@@ -20,8 +22,13 @@ final class UnreadStore: ObservableObject {
 
     func refresh() async {
         guard PDAClient.shared.isLoggedIn else { counters = .init(); return }
-        if let c = try? await PDAAPI.unreadCounters() { counters = c }
+        if let c = try? await PDAAPI.unreadCounters() {
+            Notifier.notifyChanges(old: counters, new: c, firstLoad: !loadedOnce)
+            counters = c
+            loadedOnce = true
+        }
     }
+    private var loadedOnce = false
 }
 
 /// Выбранная вкладка — чтобы кнопки главной могли переключать вкладки.
@@ -224,5 +231,53 @@ enum ScreenshotRoute {
         case "userposts": router.push(MoreRoute.userPosts(id, "Пользователь"))
         default: break
         }
+    }
+}
+
+/// Уведомления о новом (как «Уведомлять о сообщениях QMS / об избранном / об упоминаниях»
+/// в Android-клиенте). Проверка — пока приложение открыто и в фоне, когда iOS это разрешает.
+enum Notifier {
+    static let refreshTaskId = "com.fivepda.client.refresh"
+    private static let lastKey = "notifier_last_counters"
+
+    static func requestPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in }
+    }
+
+    @MainActor static func notifyChanges(old: PDAAPI.UnreadCounters, new: PDAAPI.UnreadCounters, firstLoad: Bool) {
+        let d = UserDefaults.standard
+        // Сравниваем с последним показанным, чтобы не дублировать после перезапуска.
+        let last = d.array(forKey: lastKey) as? [Int] ?? [old.qms, old.favorites, old.mentions]
+        defer { d.set([new.qms, new.favorites, new.mentions], forKey: lastKey) }
+        if firstLoad && d.array(forKey: lastKey) == nil { return }
+        var lines: [String] = []
+        if d.object(forKey: "notify_qms") as? Bool ?? true, new.qms > last[0] { lines.append("Новые сообщения QMS: \(new.qms)") }
+        if d.object(forKey: "notify_favorites") as? Bool ?? true, new.favorites > last[1] { lines.append("Обновления в избранном: \(new.favorites)") }
+        if d.object(forKey: "notify_mentions") as? Bool ?? true, new.mentions > last[2] { lines.append("Новые упоминания: \(new.mentions)") }
+        UNUserNotificationCenter.current().setBadgeCount(new.qms + new.favorites + new.mentions) { _ in }
+        guard !lines.isEmpty, UIApplication.shared.applicationState != .active else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "4PDA"
+        content.body = lines.joined(separator: "\n")
+        content.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+    }
+
+    /// Фоновая проверка (BGAppRefreshTask): iOS сама решает, когда её запустить.
+    static func registerBackground() {
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: refreshTaskId, using: nil) { task in
+            scheduleBackground()
+            let work = Task { @MainActor in
+                await UnreadStore.shared.refresh()
+                task.setTaskCompleted(success: true)
+            }
+            task.expirationHandler = { work.cancel() }
+        }
+    }
+
+    static func scheduleBackground() {
+        let req = BGAppRefreshTaskRequest(identifier: refreshTaskId)
+        req.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
+        try? BGTaskScheduler.shared.submit(req)
     }
 }

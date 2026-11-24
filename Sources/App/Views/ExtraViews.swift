@@ -139,9 +139,20 @@ struct SettingsView: View {
     @AppStorage("confirm_actions") private var confirmActions = true
     @AppStorage("appearance") private var appearance = 0
     @AppStorage("tags_below") private var tagsBelow = false
+    @AppStorage("notify_qms") private var notifyQMS = true
+    @AppStorage("notify_favorites") private var notifyFavorites = true
+    @AppStorage("notify_mentions") private var notifyMentions = true
 
     var body: some View {
         Form {
+            Section {
+                Toggle("Уведомлять о сообщениях QMS", isOn: $notifyQMS)
+                Toggle("Уведомлять об избранном", isOn: $notifyFavorites)
+                Toggle("Уведомлять об упоминаниях", isOn: $notifyMentions)
+            } header: { Text("Уведомления") } footer: {
+                Text("Проверка идёт, пока приложение открыто, и в фоне — когда iOS разрешает (обычно не чаще раза в 15 минут).")
+            }
+            .onChange(of: notifyQMS) { if $0 { Notifier.requestPermission() } }
             Section("Внешний вид") {
                 Picker("Тема", selection: $appearance) {
                     Text("Как в системе").tag(0)

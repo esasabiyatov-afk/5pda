@@ -33,6 +33,10 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         ITSAppUsesNonExemptEncryption: false
+        UIBackgroundModes:
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.fivepda.client.refresh
         UIAppFonts:
           - fontello.ttf
         NSAppTransportSecurity:

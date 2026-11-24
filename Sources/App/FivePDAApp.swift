@@ -7,6 +7,11 @@ struct FivePDAApp: App {
     @StateObject private var unread = UnreadStore.shared
     @StateObject private var tabs = TabSelection()
     @AppStorage("appearance") private var appearance = 0
+    @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        Notifier.registerBackground()
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -35,7 +40,12 @@ struct FivePDAApp: App {
             .environmentObject(client)
             .environmentObject(unread)
             .environmentObject(tabs)
+            .onChange(of: scenePhase) { phase in
+                if phase == .background { Notifier.scheduleBackground() }
+                if phase == .active { Task { await unread.refresh() } }
+            }
             .task {
+                if client.isLoggedIn { Notifier.requestPermission() }
                 unread.start()
                 await updater.check()
             }

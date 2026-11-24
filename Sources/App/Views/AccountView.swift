@@ -92,6 +92,8 @@ struct AccountView: View {
             password = ""
             captchaURL = nil
             captchaAnswer = ""
+            Notifier.requestPermission()
+            await UnreadStore.shared.refresh()
         } catch let e as PDAClient.CaptchaRequired {
             captchaURL = e.imageURL
             captchaAnswer = ""
