@@ -310,6 +310,11 @@ extension PDAAPI {
         qmsContacts(try await PDAClient.shared.call("ql"))
     }
 
+    /// Диалоги одного собеседника (`ql`): [id собеседника] → [[собеседник с диалогами]].
+    static func qmsDialogs(contactId: Int) async throws -> [QMSDialogSummary] {
+        qmsContacts(try await PDAClient.shared.call("ql", [.int(contactId)])).first?.dialogs ?? []
+    }
+
     /// Поиск по сообщениям QMS (`ql`): [0, 0, запрос].
     static func qmsSearch(_ query: String) async throws -> [QMSContact] {
         qmsContacts(try await PDAClient.shared.call("ql", [0, 0, .string(query)]))

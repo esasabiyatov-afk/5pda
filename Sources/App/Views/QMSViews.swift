@@ -10,6 +10,9 @@ struct QMSListView: View {
     @State private var query = ""
     @State private var alert: ActionAlert?
     @State private var newDialog = false
+    @State private var expanded: Set<Int> = []
+    @State private var dialogs: [Int: [QMSDialogSummary]] = [:]
+    @State private var loadingContact: Int?
 
     var body: some View {
         LoginRequired {
@@ -25,7 +28,9 @@ struct QMSListView: View {
                         }
                         ForEach(contacts) { c in
                             Section {
-                                ForEach(c.dialogs) { d in
+                                if expanded.contains(c.id) {
+                                if loadingContact == c.id { ProgressView().frame(maxWidth: .infinity) }
+                                ForEach(dialogs[c.id] ?? c.dialogs) { d in
                                     NavigationLink(value: QMSDialogRoute(id: d.id, title: "\(c.nick): \(d.title)")) {
                                         HStack {
                                             if d.unread > 0 { Circle().fill(PDATheme.unreadDot).frame(width: 9, height: 9) }
@@ -42,9 +47,12 @@ struct QMSListView: View {
                                         }
                                     }
                                 }
+                                }
                             } header: {
-                                NavigationLink(value: ProfileRoute(id: c.id, nick: c.nick)) {
+                                Button { Task { await toggle(c) } } label: {
                                     HStack(spacing: 10) {
+                                        Image(systemName: expanded.contains(c.id) ? "chevron.down" : "chevron.right")
+                                            .font(.caption.bold()).foregroundStyle(.secondary).frame(width: 12)
                                         AvatarView(url: c.avatar, size: 40)
                                         VStack(alignment: .leading, spacing: 1) {
                                             HStack(spacing: 4) {
@@ -63,6 +71,13 @@ struct QMSListView: View {
                                         }
                                     }
                                     .textCase(nil)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button { router.push(ProfileRoute(id: c.id, nick: c.nick)) } label: {
+                                        Label("Профиль", systemImage: "person")
+                                    }
                                 }
                             }
                         }
@@ -86,13 +101,32 @@ struct QMSListView: View {
 
     private func reload() async {
         error = nil
-        do { contacts = try await PDAAPI.qmsContacts() } catch { self.error = error.localizedDescription }
+        do {
+            contacts = try await PDAAPI.qmsContacts()
+            // Как в Android: раскрыты собеседники, у которых сервер сразу прислал диалоги.
+            for c in contacts where !c.dialogs.isEmpty { expanded.insert(c.id) }
+            dialogs = [:]
+        } catch { self.error = error.localizedDescription }
         loaded = true
+    }
+
+    /// Раскрытие собеседника: диалоги подгружаются по ql [id].
+    private func toggle(_ c: QMSContact) async {
+        if expanded.contains(c.id) { expanded.remove(c.id); return }
+        expanded.insert(c.id)
+        guard dialogs[c.id] == nil else { return }
+        loadingContact = c.id
+        defer { loadingContact = nil }
+        if let d = try? await PDAAPI.qmsDialogs(contactId: c.id) { dialogs[c.id] = d }
     }
 
     private func search() async {
         guard !query.isEmpty else { return }
-        do { contacts = try await PDAAPI.qmsSearch(query) } catch { alert = ActionAlert(title: "Ошибка", message: error.localizedDescription) }
+        do {
+            contacts = try await PDAAPI.qmsSearch(query)
+            expanded = Set(contacts.filter { !$0.dialogs.isEmpty }.map(\.id))
+            dialogs = [:]
+        } catch { alert = ActionAlert(title: "Ошибка", message: error.localizedDescription) }
     }
 
     private func delete(dialog: QMSDialogSummary) async {
