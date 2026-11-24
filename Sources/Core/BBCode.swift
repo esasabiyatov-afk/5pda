@@ -71,6 +71,7 @@ struct BBParser {
         var link: URL?
         var color: Color?
         var small = false
+        var iconFont = false
     }
 
     private func parseBlocks(_ tokens: inout [Token], until closing: String?) -> [BBBlock] {
@@ -95,6 +96,8 @@ struct BBParser {
             if st.strike { a.strikethroughStyle = .single }
             if let c = st.color { a.foregroundColor = c }
             if let l = st.link { a.link = l; a.foregroundColor = .accentColor }
+            // Иконочный шрифт 4PDA (fontello из Android-клиента).
+            if st.iconFont { a.font = .custom("fontello", size: st.small ? 13 : 17) }
             current += a
         }
 
@@ -123,6 +126,7 @@ struct BBParser {
                 var st = styles.last!.1
                 switch name {
                 case "b": st.bold = true
+                case "font": st.iconFont = Self.unquote(arg).lowercased() == "fontello"
                 case "background", "backgroud": st.bold = true
                 case "hr": append("\n──────────\n"); continue
                 case "tr": append("\n"); continue
@@ -280,7 +284,9 @@ struct BBParser {
         guard known.contains(name) else { return nil }
         // Вложенная разметка допустима только в аргументе (заголовок спойлера и т.п.).
         if name.contains("[") { return nil }
-        if arg.contains("[") { arg = plainText(arg) }
+        // Вложенная разметка в заголовке спойлера сохраняется (иконки fontello, цвета),
+        // в остальных аргументах — убирается.
+        if arg.contains("["), !["spoiler", "hide", "offtop"].contains(name) { arg = plainText(arg) }
         return Token(kind: .open(name, arg))
     }
 

@@ -33,6 +33,8 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         ITSAppUsesNonExemptEncryption: false
+        UIAppFonts:
+          - fontello.ttf
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
     settings:

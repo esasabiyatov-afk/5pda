@@ -80,6 +80,15 @@ struct BBBlockView: View {
         }
     }
 
+    /// Заголовок спойлера может содержать разметку (иконки, цвет).
+    static func titleText(_ bb: String) -> Text {
+        guard bb.contains("[") else { return Text(bb).font(.body) }
+        let parts = BBParser().parse(bb).compactMap { b -> AttributedString? in
+            if case .text(let t) = b { return t } else { return nil }
+        }
+        return parts.isEmpty ? Text(BBParser.plainText(bb)) : render(parts.reduce(AttributedString(), +))
+    }
+
     /// Текст со смайлами: куски с ссылкой pdasmile:// заменяются картинками.
     static func render(_ text: AttributedString) -> Text {
         guard text.runs.contains(where: { $0.link?.scheme == "pdasmile" }) else { return Text(text) }
@@ -147,7 +156,7 @@ struct BBBlockView: View {
                     HStack(spacing: 0) {
                         Rectangle().fill(PDATheme.spoilerBar).frame(width: 5)
                         (Text(title == "Оффтоп" ? "" : "Спойлер: ").font(.footnote).foregroundColor(.secondary)
-                         + Text(title).font(.body))
+                         + Self.titleText(title))
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.leading)
                             .padding(.horizontal, 8).padding(.vertical, 9)
