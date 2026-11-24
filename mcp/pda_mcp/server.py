@@ -70,8 +70,8 @@ def _post_text(p: list, number: int | None = None, raw: bool = False) -> str:
 
 # ---------- вход ----------
 
-@mcp.tool()
-def pda_login(login: str = "", password: str = "", captcha: int = 0, hidden: bool = False) -> list | str:
+@mcp.tool(structured_output=False)
+def pda_login(login: str = "", password: str = "", captcha: int = 0, hidden: bool = False):
     """Вход в аккаунт 4PDA. Логин и пароль можно не передавать, если заданы переменные окружения
     PDA_LOGIN и PDA_PASSWORD. Если сервер просит капчу, вернётся картинка с числом, записанным
     прописью («шесть тысяч триста...») — переведите в цифры и вызовите снова с captcha=число
