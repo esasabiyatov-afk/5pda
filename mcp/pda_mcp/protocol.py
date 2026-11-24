@@ -333,7 +333,11 @@ class Client:
                     url = e.payload[0] if e.payload else ""
                     raise CaptchaRequired("https:" + url if url.startswith("//") else url)
                 raise
-            self.member_id, self.key, self.nick = int(d[0]), str(d[1]), login
+            self.member_id, self.key, self.nick = int(d[0]), str(d[1]), ""
+            try:   # ник из профиля (логином может быть e-mail)
+                self.nick = str(self.call("mi", [self.member_id])[1])
+            except Exception:
+                pass
             self._save_session()
 
     @property
