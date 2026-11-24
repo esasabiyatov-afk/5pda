@@ -325,7 +325,6 @@ struct CreateTopicView: View {
     @State private var error: String?
     @State private var fieldErrors: [Int: String] = [:]
     @StateObject private var editor = BBEditorController()
-    @StateObject private var uploader = AttachmentUploader()
 
     var body: some View {
         NavigationStack {
@@ -338,9 +337,12 @@ struct CreateTopicView: View {
                         case "text":
                             TextField(f.title, text: $f.text)
                         case "editor":
-                            BBToolbar(controller: editor)
-                            BBTextView(text: $f.text, controller: editor, autoFocus: false)
-                                .frame(minHeight: 220)
+                            VStack(spacing: 0) {
+                                BBToolbar(controller: editor)
+                                Divider()
+                                BBTextView(text: $f.text, controller: editor, autoFocus: false)
+                                    .frame(minHeight: 220)
+                            }
                         case "dropdown":
                             Picker(f.title, selection: $f.selected) {
                                 ForEach(Array(f.options.enumerated()), id: \.offset) { i, o in Text(o).tag(i) }
@@ -351,7 +353,7 @@ struct CreateTopicView: View {
                                                         set: { on in if on { f.checked.insert(i) } else { f.checked.remove(i) } }))
                             }
                         case "upload_box":
-                            AttachmentBar(uploader: uploader, editor: editor)
+                            UploadBoxField(attachments: $f.attachments)
                         default:
                             if !f.text.isEmpty { BBContentView(f.text) }
                         }
@@ -391,8 +393,7 @@ struct CreateTopicView: View {
         defer { sending = false }
         error = nil
         fieldErrors = [:]
-        var send = fields
-        for i in send.indices where send[i].type == "upload_box" { send[i].attachments = uploader.items.compactMap(\.id) }
+        let send = fields
         do {
             let id = try await PDAAPI.submitTopic(forumId: forumId, fields: send)
             let title = send.first(where: { $0.type == "text" })?.text ?? forumName
@@ -627,5 +628,20 @@ struct ModerationView: View {
             default: return nil
             }
         }.joined(separator: " · ")
+    }
+}
+
+/// Поле загрузки формы релизера: свой загрузчик, id вложений — только в это поле.
+struct UploadBoxField: View {
+    @Binding var attachments: [Int]
+    @StateObject private var uploader: AttachmentUploader = {
+        let u = AttachmentUploader(); u.insertsTag = false; return u
+    }()
+    @StateObject private var dummy = BBEditorController()
+
+    var body: some View {
+        AttachmentBar(uploader: uploader, editor: dummy)
+            .buttonStyle(.borderless)
+            .onReceive(uploader.$items) { items in attachments = items.compactMap(\.id) }
     }
 }

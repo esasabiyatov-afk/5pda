@@ -264,7 +264,8 @@ struct BBToolbar: View {
     }
 
     private func button(_ name: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { icon(name) }.buttonStyle(.plain).foregroundStyle(.primary)
+        // borderless: внутри Form/List иначе одно нажатие срабатывает на все кнопки строки.
+        Button(action: action) { icon(name) }.buttonStyle(.borderless).foregroundStyle(.primary)
     }
 }
 
@@ -307,6 +308,9 @@ final class AttachmentUploader: ObservableObject {
     }
     @Published var items: [Item] = []
 
+    /// false — только загрузить (поле формы), не вставлять тег в текст.
+    var insertsTag = true
+
     func upload(name: String, data: Data, editor: BBEditorController) {
         let item = Item(id: nil, name: name)
         items.append(item)
@@ -314,7 +318,7 @@ final class AttachmentUploader: ObservableObject {
             do {
                 let id = try await PDAAPI.uploadAttachment(name: name, data: data)
                 if let i = items.firstIndex(where: { $0.localId == item.localId }) { items[i].id = id }
-                editor.insert("[attachment=\"\(id):\(name)\"]")
+                if insertsTag { editor.insert("[attachment=\"\(id):\(name)\"]") }
             } catch {
                 if let i = items.firstIndex(where: { $0.localId == item.localId }) { items[i].failed = error.localizedDescription }
             }
